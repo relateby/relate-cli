@@ -1,0 +1,30 @@
+[package]
+name = "relate"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80.0"
+authors = ["Andreas Kollegger <andreas.kollegger@neo4j.com>"]
+license = "MIT"
+description = "CLI for working with .cypher and .gram files and Neo4j"
+repository = "https://github.com/relateby/relate-cli"
+readme = "README.md"
+keywords = ["cli", "cypher", "gram", "neo4j", "graph"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "relate"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.6", features = ["derive", "env"] }
+anyhow = "1.0"
+tokio = { version = "1", features = ["full"] }
+neo4rs = "0.9.0-rc.9"
+tree-sitter = "0.26"
+tree-sitter-gram = "0.3.7"
+rmcp = { version = "1.6", features = ["server", "transport-io"] }
+# tree-sitter-cypher not yet on crates.io — see RFC-002
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"

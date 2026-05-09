@@ -1,0 +1,23 @@
+/target/
+
+# Tool-managed directories
+.claude/
+.specify/
+
+# Editor and OS artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment files (may contain Neo4j credentials)
+.env
+.env.*
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
