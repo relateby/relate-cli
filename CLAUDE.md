@@ -47,8 +47,8 @@ proposals/
 - **clap 4** (derive API) — all arg structs live in `src/cli.rs`
 - **tokio** (full) — `main` is async; sync commands are called without `.await`
 - **neo4rs 0.9.0-rc.9** — Bolt driver; used only in `write` and `read` commands
+- **tree-sitter-cypher 0.2** — from crates.io; includes cypherdoc sub-grammar
 - **tree-sitter-gram 0.3.7** — from crates.io
-- **tree-sitter-cypher** — NOT YET included; see RFC-002 for resolution plan
 - **rmcp 1.6** — MCP stdio server; used only in `mcp` command
 
 ## Neo4j Credentials

@@ -9,13 +9,43 @@ use std::path::PathBuf;
     long_about = "relate — work with Cypher and Gram files, and connect to Neo4j.\n\n\
                   Examples:\n  \
                   relate lint my-query.cypher\n  \
+                  relate lint -e 'MATCH (n) RETURN n'\n  \
                   relate parse schema.gram\n  \
                   relate write nodes.gram\n  \
                   relate mcp ./queries/"
 )]
 pub struct Cli {
+    #[command(flatten)]
+    pub neo4j: Neo4jArgs,
+
     #[command(subcommand)]
     pub command: Commands,
+}
+
+/// Neo4j connection arguments, available globally across all subcommands.
+/// Validation (requiring --password) is performed only by commands that need it.
+#[derive(Debug, Clone, clap::Args)]
+pub struct Neo4jArgs {
+    /// Neo4j Bolt URI
+    #[arg(long, global = true, default_value = "bolt://localhost:7687")]
+    pub uri: String,
+
+    /// Neo4j username
+    #[arg(long, global = true, default_value = "neo4j")]
+    pub user: String,
+
+    /// Neo4j password (also read from NEO4J_PASSWORD env var)
+    #[arg(long, global = true, env = "NEO4J_PASSWORD")]
+    pub password: Option<String>,
+}
+
+impl Neo4jArgs {
+    /// Returns the password or an error — call only from commands that require Neo4j.
+    pub fn require_password(&self) -> anyhow::Result<&str> {
+        self.password
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("--password or NEO4J_PASSWORD is required"))
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -34,9 +64,20 @@ pub enum Commands {
 
 #[derive(Debug, clap::Args)]
 pub struct LintArgs {
-    /// Files to lint (.cypher or .gram)
-    #[arg(required = true)]
+    /// Files or directories to lint (.cypher or .gram); reads stdin if omitted
     pub files: Vec<PathBuf>,
+
+    /// Lint an inline expression instead of a file
+    #[arg(short = 'e', long = "expr")]
+    pub expr: Option<String>,
+
+    /// Output results as JSON
+    #[arg(long)]
+    pub json: bool,
+
+    /// Treat warnings as errors
+    #[arg(long)]
+    pub strict: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -60,18 +101,6 @@ pub enum ParseFormat {
 
 #[derive(Debug, clap::Args)]
 pub struct WriteArgs {
-    /// Neo4j Bolt URI
-    #[arg(long, default_value = "bolt://localhost:7687")]
-    pub uri: String,
-
-    /// Neo4j username
-    #[arg(long, default_value = "neo4j")]
-    pub user: String,
-
-    /// Neo4j password
-    #[arg(long, env = "NEO4J_PASSWORD")]
-    pub password: String,
-
     /// .gram files to write
     #[arg(required = true)]
     pub files: Vec<PathBuf>,
@@ -79,18 +108,6 @@ pub struct WriteArgs {
 
 #[derive(Debug, clap::Args)]
 pub struct ReadArgs {
-    /// Neo4j Bolt URI
-    #[arg(long, default_value = "bolt://localhost:7687")]
-    pub uri: String,
-
-    /// Neo4j username
-    #[arg(long, default_value = "neo4j")]
-    pub user: String,
-
-    /// Neo4j password
-    #[arg(long, env = "NEO4J_PASSWORD")]
-    pub password: String,
-
     /// Cypher query to execute
     pub query: String,
 

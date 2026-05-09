@@ -21,9 +21,9 @@ anyhow = "1.0"
 tokio = { version = "1", features = ["full"] }
 neo4rs = "0.9.0-rc.9"
 tree-sitter = "0.26"
+tree-sitter-cypher = "0.2"
 tree-sitter-gram = "0.3.7"
 rmcp = { version = "1.6", features = ["server", "transport-io"] }
-# tree-sitter-cypher not yet on crates.io — see RFC-002
 
 [dev-dependencies]
 assert_cmd = "2"
