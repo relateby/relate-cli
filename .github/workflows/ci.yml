@@ -20,7 +20,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.80.0"
+          toolchain: stable
           components: rustfmt, clippy
 
       - name: Cache cargo registry and build artifacts

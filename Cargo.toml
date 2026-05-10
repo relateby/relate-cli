@@ -2,7 +2,7 @@
 name = "relate"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80.0"
+rust-version = "1.85.0"
 authors = ["Andreas Kollegger <andreas.kollegger@neo4j.com>"]
 license = "MIT"
 description = "CLI for working with .cypher and .gram files and Neo4j"
