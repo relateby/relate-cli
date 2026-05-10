@@ -36,6 +36,18 @@ proposals/
 └── RFC-001.md           # meta-RFC; RFC-NNN.md for each feature
 ```
 
+## Agent Skills
+
+Skills live in `skills/` at the repo root, one directory per skill, each containing
+a `SKILL.md` file (agentskills.io / `npx skills find` convention). Each skill is a
+workflow-driven runbook — steps, checkpoints, exit criteria, anti-rationalization table.
+
+```
+skills/
+├── relate/SKILL.md          # overview + install (load this first)
+└── relate-lint/SKILL.md     # lint workflow
+```
+
 ## RFC Convention
 
 - 3-digit numbering: RFC-001, RFC-002, ...
