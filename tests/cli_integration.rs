@@ -368,6 +368,8 @@ mod query {
                 "query",
                 "--uri",
                 "bolt://127.0.0.1:1",
+                "--password",
+                "dummy",
                 f.path().to_str().unwrap(),
             ])
             .assert()
@@ -453,6 +455,8 @@ mod query {
                 "query",
                 "--uri",
                 "bolt://127.0.0.1:1",
+                "--password",
+                "dummy",
                 "--json",
                 "-e",
                 "MATCH (n) RETURN count(n) AS total",

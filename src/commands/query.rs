@@ -11,18 +11,26 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 enum StatementSource {
     Inline,
-    File { path: PathBuf, line: u32 },
+    File {
+        path: PathBuf,
+        line: u32,
+        /// 0-based index within the file. Used for display: index 0 shows just
+        /// the filename; subsequent statements also show the start line so the
+        /// user can locate them in multi-statement files.
+        statement_idx: usize,
+    },
 }
 
 impl std::fmt::Display for StatementSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StatementSource::Inline => write!(f, "<inline>"),
-            // line 1 = first statement — omit line number for cleaner output
-            StatementSource::File { path, line } if *line <= 1 => {
-                write!(f, "{}", path.display())
-            }
-            StatementSource::File { path, line } => {
+            StatementSource::File {
+                path,
+                statement_idx: 0,
+                ..
+            } => write!(f, "{}", path.display()),
+            StatementSource::File { path, line, .. } => {
                 write!(f, "{}:{}", path.display(), line)
             }
         }
@@ -68,6 +76,9 @@ struct QueryResult {
     columns: Vec<String>,
     rows: Vec<Vec<serde_json::Value>>,
     summary: QuerySummary,
+    /// True when the statement was classified as a write operation.
+    /// Used to display "(write completed)" vs "(no rows returned)".
+    is_write: bool,
 }
 
 // ── T027: Classification ──────────────────────────────────────────────────────
@@ -115,10 +126,12 @@ fn build_queue_file(path: &Path) -> Result<Vec<StatementEntry>> {
         }
         let text = source[child.byte_range()].trim().to_string();
         let line = child.start_position().row as u32 + 1; // 1-based
+        let statement_idx = entries.len();
         entries.push(StatementEntry {
             source: StatementSource::File {
                 path: path.to_owned(),
                 line,
+                statement_idx,
             },
             text,
         });
@@ -255,6 +268,19 @@ fn classify_statement(text: &str) -> Classification {
 
 // ── T029: Preflight Stage 2 — Write classification ───────────────────────────
 
+fn clause_kind_to_keyword(kind: &str) -> &str {
+    match kind {
+        "create_clause" => "CREATE",
+        "merge_clause" => "MERGE",
+        "set_clause" => "SET",
+        "delete_clause" => "DELETE",
+        "remove_clause" => "REMOVE",
+        "foreach_clause" => "FOREACH",
+        "call_clause" => "CALL",
+        other => other,
+    }
+}
+
 fn preflight_write(queue: &[StatementEntry], allow_write: bool) {
     for entry in queue {
         if let Classification::Write { first_write_kind } = classify_statement(&entry.text) {
@@ -262,7 +288,7 @@ fn preflight_write(queue: &[StatementEntry], allow_write: bool) {
                 eprintln!("Error: write operation requires --write flag");
                 eprintln!("  Statement: {}", entry.text.lines().next().unwrap_or(""));
                 eprintln!("  Source: {}", entry.source);
-                eprintln!("  Clause: {first_write_kind}");
+                eprintln!("  Clause: {}", clause_kind_to_keyword(&first_write_kind));
                 eprintln!();
                 eprintln!("  Re-run with --write to allow mutations.");
                 std::process::exit(1);
@@ -407,12 +433,22 @@ fn bind_params(mut q: neo4rs::Query, params: &ParamMap) -> neo4rs::Query {
                 serde_json::Value::Number(n) => {
                     if let Some(i) = n.as_i64() {
                         q.param(name.as_str(), i)
+                    } else if let Some(f) = n.as_f64() {
+                        q.param(name.as_str(), f)
                     } else {
-                        q.param(name.as_str(), n.as_f64().unwrap_or(0.0))
+                        eprintln!("Warning: parameter '{name}' has an unrepresentable numeric value — skipped");
+                        q
                     }
                 }
                 serde_json::Value::Bool(b) => q.param(name.as_str(), *b),
-                _ => q, // null, arrays, objects not yet supported via --params
+                serde_json::Value::Null => {
+                    eprintln!("Warning: parameter '{name}' is JSON null — null parameters are not yet supported via --params and will not be bound");
+                    q
+                }
+                serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+                    eprintln!("Warning: parameter '{name}' is a JSON array or object — complex types are not yet supported via --params and will not be bound");
+                    q
+                }
             },
         };
     }
@@ -436,6 +472,10 @@ async fn execute_queue(
     let mut results = Vec::new();
 
     for entry in queue {
+        let is_write = matches!(
+            classify_statement(&entry.text),
+            Classification::Write { .. }
+        );
         let q = bind_params(neo4rs::query(&entry.text), params);
 
         let mut stream: neo4rs::DetachedRowStream = match graph.execute(q).await {
@@ -477,11 +517,17 @@ async fn execute_queue(
             }
         }
 
+        // Consume the stream to completion; counters require the
+        // `unstable-result-summary` neo4rs feature which has a compilation
+        // bug in 0.9.0-rc.9. Summary fields stay zeroed until that stabilises.
+        let _ = stream.finish().await;
+
         results.push(QueryResult {
             source: entry.source.clone(),
             columns,
             rows,
             summary: QuerySummary::default(),
+            is_write,
         });
     }
 
@@ -526,15 +572,17 @@ fn print_table(result: &QueryResult) {
 
     if result.rows.is_empty() {
         let summary_str = format_summary(&result.summary);
-        if summary_str.is_empty() {
-            println!("(no rows returned)");
-        } else {
+        if !summary_str.is_empty() {
             let mut chars = summary_str.chars();
             let cap = chars
                 .next()
                 .map(|c| c.to_uppercase().collect::<String>())
                 .unwrap_or_default();
             println!("{}{}.", cap, chars.as_str());
+        } else if result.is_write {
+            println!("(write completed)");
+        } else {
+            println!("(no rows returned)");
         }
     } else {
         let mut table = Table::new();
@@ -576,6 +624,7 @@ struct JsonSummary {
 #[derive(serde::Serialize)]
 struct JsonResult {
     source: String,
+    is_write: bool,
     columns: Vec<String>,
     rows: Vec<serde_json::Value>,
     summary: JsonSummary,
@@ -586,6 +635,7 @@ fn print_json(results: &[QueryResult]) {
         .iter()
         .map(|r| JsonResult {
             source: r.source.to_string(),
+            is_write: r.is_write,
             columns: r.columns.clone(),
             rows: r
                 .rows
