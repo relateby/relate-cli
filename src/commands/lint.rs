@@ -96,32 +96,8 @@ fn lang_from_tag(tag: &str) -> Lang {
     }
 }
 
-// cypher_data::lint::lint_source returns cypher_data::types::Diagnostic (its own type),
-// not gram_diagnostics::Diagnostic. The conversion below is therefore not redundant —
-// cypher-data does not yet re-export from gram-diagnostics. See gram-data/tree-sitter-cypher#8.
-fn from_cypher_diagnostic(d: cypher_data::types::Diagnostic) -> Diagnostic {
-    Diagnostic {
-        severity: match d.severity {
-            cypher_data::types::Severity::Error => Severity::Error,
-            cypher_data::types::Severity::Warning => Severity::Warning,
-            cypher_data::types::Severity::Information => Severity::Information,
-            cypher_data::types::Severity::Hint => Severity::Hint,
-        },
-        rule: d.rule,
-        message: d.message,
-        code: d.code,
-        range: gram_diagnostics::Range {
-            start: gram_diagnostics::Position {
-                line: d.range.start.line,
-                character: d.range.start.character,
-            },
-            end: gram_diagnostics::Position {
-                line: d.range.end.line,
-                character: d.range.end.character,
-            },
-        },
-    }
-}
+// Delegate to the shared helper in commands::mod to avoid duplication with query.rs.
+use crate::commands::from_cypher_diagnostic;
 
 // ── Fence extraction ───────────────────────────────────────────────────────────
 

@@ -326,3 +326,113 @@ fn lint_no_strict_warning_exits_zero() {
         .assert()
         .success();
 }
+
+// ── relate query integration tests ─────────────────────────────────────────
+
+mod query {
+    use assert_cmd::Command;
+    use predicates::str::contains;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn cmd() -> Command {
+        Command::cargo_bin("relate").unwrap()
+    }
+
+    // T036: Write protection fires before any Bolt connection attempt
+    #[test]
+    fn write_without_flag_exits_one_before_connecting() {
+        cmd()
+            .args(["query", "--uri", "bolt://127.0.0.1:1", "-e", "CREATE (n:Test)"])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("write operation requires --write flag"));
+    }
+
+    // T018: Single-statement file runs and shows filename as source header
+    // Requires no live Neo4j — lint and write-check pass; execution fails (port 1)
+    // but we test the preflight path here.
+    #[test]
+    fn read_query_file_preflight_passes() {
+        let mut f = NamedTempFile::with_suffix(".cypher").unwrap();
+        writeln!(f, "MATCH (n) RETURN n").unwrap();
+        cmd()
+            .args(["query", "--uri", "bolt://127.0.0.1:1", f.path().to_str().unwrap()])
+            .assert()
+            .failure()
+            .code(2); // preflight passes; runtime fails on unreachable URI
+    }
+
+    // T019: Multi-statement file with lint error in second statement exits 1 before connecting
+    #[test]
+    fn multi_statement_lint_error_exits_one() {
+        let mut f = NamedTempFile::with_suffix(".cypher").unwrap();
+        writeln!(f, "MATCH (n) RETURN n").unwrap();
+        writeln!(f, "THIS IS NOT CYPHER !!!").unwrap();
+        cmd()
+            .args(["query", "--uri", "bolt://127.0.0.1:1", f.path().to_str().unwrap()])
+            .assert()
+            .failure()
+            .code(1); // lint preflight catches the second statement
+    }
+
+    // Empty .cypher file → exits 1 with "no statements found"
+    #[test]
+    fn empty_cypher_file_exits_one() {
+        let f = NamedTempFile::with_suffix(".cypher").unwrap();
+        cmd()
+            .args(["query", "--uri", "bolt://127.0.0.1:1", f.path().to_str().unwrap()])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("no statements found"));
+    }
+
+    // Missing required parameter → exits 1 before connecting
+    #[test]
+    fn missing_param_exits_one() {
+        cmd()
+            .args(["query", "--uri", "bolt://127.0.0.1:1",
+                   "-e", "MATCH (n {name: $name}) RETURN n"])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("missing required parameter '$name'"));
+    }
+
+    // --json flag: preflight still works (exits 1 on lint error)
+    #[test]
+    fn json_flag_with_lint_error_exits_one() {
+        cmd()
+            .args(["query", "--uri", "bolt://127.0.0.1:1", "--json",
+                   "-e", "NOT VALID CYPHER"])
+            .assert()
+            .failure()
+            .code(1);
+    }
+
+    // T035: --json with valid read query exits 2 (preflight passes, runtime fails on port 1)
+    // This verifies the JSON output path is reachable
+    #[test]
+    fn json_flag_preflight_passes_for_valid_read() {
+        cmd()
+            .args(["query", "--uri", "bolt://127.0.0.1:1", "--json",
+                   "-e", "MATCH (n) RETURN count(n) AS total"])
+            .assert()
+            .failure()
+            .code(2); // preflight passes; runtime fails on unreachable URI
+    }
+
+    // Mutual exclusion: [QUERY] and -e together → exits 1
+    #[test]
+    fn mutual_exclusion_exits_one() {
+        let f = NamedTempFile::with_suffix(".cypher").unwrap();
+        cmd()
+            .args(["query", f.path().to_str().unwrap(), "-e", "MATCH (n) RETURN n"])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("mutually exclusive"));
+    }
+}

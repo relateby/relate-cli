@@ -11,6 +11,8 @@ use std::path::PathBuf;
                   relate lint my-query.cypher\n  \
                   relate lint -e 'MATCH (n) RETURN n'\n  \
                   relate parse schema.gram\n  \
+                  relate query -e 'MATCH (n) RETURN count(n) AS total'\n  \
+                  relate query find_person.cypher --param name=Alice\n  \
                   relate write nodes.gram\n  \
                   relate mcp ./queries/"
 )]
@@ -55,6 +57,8 @@ pub enum Commands {
     Lint(LintArgs),
     /// Parse a file and display its syntax tree
     Parse(ParseArgs),
+    /// Execute a Cypher query against Neo4j
+    Query(QueryArgs),
     /// Write .gram files to Neo4j
     Write(WriteArgs),
     /// Read Neo4j results and save as .gram
@@ -135,4 +139,44 @@ pub struct McpArgs {
     /// Directory containing parameterized .cypher files
     #[arg(default_value = ".")]
     pub dir: PathBuf,
+}
+
+#[derive(Debug, clap::Args)]
+#[command(
+    long_about = "Execute a parameterized Cypher statement against Neo4j.\n\n\
+                  Statements are linted before execution. Lint is syntactic — \
+                  runtime errors (unknown labels, constraint violations) can still \
+                  occur after lint passes.\n\n\
+                  Write operations (CREATE, MERGE, SET, DELETE, REMOVE, FOREACH) \
+                  require --write.",
+    after_help = "Examples:\n  \
+                  relate query -e 'MATCH (n:Person) RETURN n.name AS name'\n  \
+                  relate query -e 'CREATE (n:Person {name: $name})' --param name=Alice --write\n  \
+                  relate query find_person.cypher --param name=Alice\n  \
+                  relate query find_person.cypher --params params.json\n  \
+                  relate query -e 'MATCH (n) RETURN count(n)' --json"
+)]
+pub struct QueryArgs {
+    /// .cypher file to execute (mutually exclusive with -e)
+    pub query: Option<PathBuf>,
+
+    /// Inline Cypher statement (repeatable; mutually exclusive with [QUERY])
+    #[arg(short = 'e', long = "expr")]
+    pub expr: Vec<String>,
+
+    /// Named query parameter NAME=VALUE (repeatable)
+    #[arg(short = 'p', long = "param")]
+    pub param: Vec<String>,
+
+    /// JSON file of named parameters (--param takes precedence on conflicts)
+    #[arg(long)]
+    pub params: Option<PathBuf>,
+
+    /// Allow write operations (CREATE, MERGE, SET, DELETE, REMOVE, FOREACH)
+    #[arg(long)]
+    pub write: bool,
+
+    /// Output results as JSON
+    #[arg(long)]
+    pub json: bool,
 }
