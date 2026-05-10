@@ -1,7 +1,7 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at specs/001-lint-command/plan.md
+at specs/002-query-command/plan.md
 <!-- SPECKIT END -->
 
 # relate CLI
@@ -26,14 +26,15 @@ src/
 ├── main.rs              # #[tokio::main], top-level dispatch
 ├── cli.rs               # all clap structs (Cli, Commands, *Args)
 └── commands/
-    ├── mod.rs
+    ├── mod.rs           # shared helpers (from_cypher_diagnostic)
     ├── lint.rs          # sync
     ├── parse.rs         # sync
+    ├── query.rs         # async (neo4rs) — parameterized Cypher execution
     ├── write.rs         # async (neo4rs)
     ├── read.rs          # async (neo4rs)
     └── mcp.rs           # async (rmcp stdio)
 proposals/
-└── RFC-001.md           # meta-RFC; RFC-NNN.md for each feature
+└── RFC-NNN-short-name.md  # RFCs for each feature
 ```
 
 ## Agent Skills
@@ -45,7 +46,8 @@ workflow-driven runbook — steps, checkpoints, exit criteria, anti-rationalizat
 ```
 skills/
 ├── relate/SKILL.md          # overview + install (load this first)
-└── relate-lint/SKILL.md     # lint workflow
+├── relate-lint/SKILL.md     # lint workflow
+└── relate-query/SKILL.md    # query workflow (parameterized Cypher execution)
 ```
 
 ## RFC Convention
@@ -59,9 +61,10 @@ skills/
 
 - **clap 4** (derive API) — all arg structs live in `src/cli.rs`
 - **tokio** (full) — `main` is async; sync commands are called without `.await`
-- **neo4rs 0.9.0-rc.9** — Bolt driver; used only in `write` and `read` commands
-- **tree-sitter-cypher 0.2** — from crates.io; includes cypherdoc sub-grammar
+- **neo4rs 0.9.0-rc.9** — Bolt driver; used in `write`, `read`, and `query` commands
+- **tree-sitter-cypher 0.2** — from crates.io; includes cypherdoc sub-grammar; root node kind: `source_file`, statement kind: `statement`, parameter kind: `parameter`
 - **tree-sitter-gram 0.3.7** — from crates.io
+- **comfy-table 7** — Unicode table rendering for `query` output
 - **rmcp 1.6** — MCP stdio server; used only in `mcp` command
 
 ## Neo4j Credentials
