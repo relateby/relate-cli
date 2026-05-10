@@ -7,13 +7,13 @@
 
 ## Decision: gram-diagnostics as shared diagnostic type
 
-**Decision**: Add `gram-diagnostics = "0.3.9"` as a direct dependency.
+**Decision**: Add `gram-diagnostics = "0.3.10"` as a direct dependency.
 
-**Rationale**: `gram-diagnostics` 0.3.9 is published and exports `Diagnostic`, `Severity`, `Range`, and `Position` with `#[derive(Serialize, Deserialize)]` (serde is a hard dep). Both `cypher-data` and `gram-data` re-export from it, so relate receives values of this type directly from both lint functions with no conversion code needed.
+**Rationale**: `gram-diagnostics` 0.3.10 exports `Diagnostic`, `Severity`, `Range`, and `Position` with `#[derive(Serialize, Deserialize)]` (serde is a hard dep). `gram-data` returns `gram_diagnostics::Diagnostic` directly. `cypher-data` returns its own `cypher_data::types::Diagnostic`, so a thin conversion (`from_cypher_diagnostic`) is required — see gram-data/tree-sitter-cypher#8 for tracking the upstream alignment.
 
-**Field note**: `Position` fields are `line: u32` and `character: u32` (not `column`). The RFC's JSON schema example uses `"column"` — the JSON output must either match `gram-diagnostics`'s field names (`character`) or apply a `#[serde(rename)]` at the output layer. Recommendation: match the RFC schema (`column`) by renaming in the serialization wrapper; this keeps the CLI output consistent with what users expect.
+**Field note**: `Position` fields are `line: u32` and `character: u32` (not `column`). The JSON output renames `character` → `column` in the serialization wrapper to match the CLI contract schema.
 
-**Alternatives considered**: Duplicating the type in relate — rejected because it requires manual conversion and diverges from upstream.
+**Alternatives considered**: Duplicating the type in relate — rejected; keeping a local mirror until the upstream aligns is preferable to forking the type permanently.
 
 ---
 

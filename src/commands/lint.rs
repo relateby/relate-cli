@@ -9,13 +9,18 @@ use std::sync::LazyLock;
 // ── Regex patterns for fence extraction (compiled once) ───────────────────────
 
 static MD_FENCE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?ms)^```[ \t]*(cypher|openCypher|gram)[ \t]*\n(.*?)^```[ \t]*$")
-        .expect("valid MD fence regex")
+    // Named group `tag` uses (?i:...) for case-insensitive matching: cypher, Cypher, openCypher, GRAM, etc.
+    regex::Regex::new(
+        r"(?ms)^```[ \t]*(?P<tag>(?i:cypher|openCypher|gram))[ \t]*\n(?P<body>.*?)^```[ \t]*$",
+    )
+    .expect("valid MD fence regex")
 });
 
 static ADOC_FENCE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?ms)^\[source,[ \t]*(cypher|openCypher|gram)\]\n----\n(.*?)\n----")
-        .expect("valid AsciiDoc fence regex")
+    regex::Regex::new(
+        r"(?ms)^\[source,[ \t]*(?P<tag>(?i:cypher|openCypher|gram))\]\n----\n(?P<body>.*?)\n----",
+    )
+    .expect("valid AsciiDoc fence regex")
 });
 
 // ── Internal types ─────────────────────────────────────────────────────────────
@@ -71,15 +76,16 @@ fn severity_str(s: &Severity) -> &'static str {
 }
 
 /// Convert a (line, character) pair to a UTF-8 byte offset within `source`.
+///
+/// Splits on `\n` so the length of each segment includes any trailing `\r`,
+/// making the sum correct for both LF and CRLF line endings.
 fn to_byte_offset(source: &str, line: u32, character: u32) -> usize {
-    let mut offset = 0usize;
-    for (i, l) in source.lines().enumerate() {
-        if i == line as usize {
-            return offset + (character as usize).min(l.len());
-        }
-        offset += l.len() + 1; // +1 for the newline
-    }
-    offset
+    let line_start: usize = source
+        .split('\n')
+        .take(line as usize)
+        .map(|l| l.len() + 1) // +1 for the \n byte; \r is already in l.len() for CRLF
+        .sum();
+    (line_start + character as usize).min(source.len())
 }
 
 fn lang_from_tag(tag: &str) -> Lang {
@@ -90,7 +96,9 @@ fn lang_from_tag(tag: &str) -> Lang {
     }
 }
 
-// cypher_data has its own Diagnostic type; convert to the shared gram_diagnostics type.
+// cypher_data::lint::lint_source returns cypher_data::types::Diagnostic (its own type),
+// not gram_diagnostics::Diagnostic. The conversion below is therefore not redundant —
+// cypher-data does not yet re-export from gram-diagnostics. See gram-data/tree-sitter-cypher#8.
 fn from_cypher_diagnostic(d: cypher_data::types::Diagnostic) -> Diagnostic {
     Diagnostic {
         severity: match d.severity {
@@ -121,8 +129,8 @@ fn extract_snippets(source: &str) -> Vec<Snippet> {
     let mut snippets = Vec::new();
 
     for cap in MD_FENCE_RE.captures_iter(source) {
-        let tag = cap.get(1).unwrap().as_str();
-        let content = cap.get(2).unwrap().as_str().to_owned();
+        let tag = cap.name("tag").unwrap().as_str();
+        let content = cap.name("body").unwrap().as_str().to_owned();
         let start_byte = cap.get(0).unwrap().start();
         let fence_line = source[..start_byte].bytes().filter(|&b| b == b'\n').count() as u32;
         snippets.push(Snippet {
@@ -133,8 +141,8 @@ fn extract_snippets(source: &str) -> Vec<Snippet> {
     }
 
     for cap in ADOC_FENCE_RE.captures_iter(source) {
-        let tag = cap.get(1).unwrap().as_str();
-        let content = cap.get(2).unwrap().as_str().to_owned();
+        let tag = cap.name("tag").unwrap().as_str();
+        let content = cap.name("body").unwrap().as_str().to_owned();
         let start_byte = cap.get(0).unwrap().start();
         let fence_line = source[..start_byte].bytes().filter(|&b| b == b'\n').count() as u32;
         snippets.push(Snippet {
@@ -308,7 +316,11 @@ fn print_json(diagnostics: &[LintDiagnostic]) {
             rule: &d.inner.rule,
             message: &d.inner.message,
             code: d.inner.code.as_deref(),
-            file: d.source_file.as_ref().and_then(|p| p.to_str()),
+            // Synthetic keys used for ariadne source lookup — emit null in JSON per CLI contract.
+            file: d.source_file.as_ref().and_then(|p| match p.to_str() {
+                Some("<expr>" | "<stdin>") => None,
+                other => other,
+            }),
             range: JsonRange {
                 start: JsonPosition {
                     line: d.inner.range.start.line,

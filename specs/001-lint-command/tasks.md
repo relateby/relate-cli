@@ -17,7 +17,7 @@ and testing of each story. Tests are included per story for immediate validation
 
 **Purpose**: Add dependencies and test fixtures. Nothing else can start until T001 succeeds.
 
-- [ ] T001 Add 7 new dependencies to Cargo.toml: cypher-data = "0.2.2", gram-data = "0.3.9", gram-diagnostics = "0.3.9", ariadne = "0.6", walkdir = "2", regex = "1", serde = { version = "1", features = ["derive"] }, serde_json = "1" — verify `cargo build` passes. Note: use `std::sync::LazyLock` for static regex (stable since Rust 1.80, matches rust-version); do NOT add once_cell.
+- [x] T001 Add 8 new dependencies to Cargo.toml: cypher-data = "0.2.3", gram-data = "0.3.10", gram-diagnostics = "0.3.10", ariadne = "0.6", walkdir = "2", regex = "1", serde = { version = "1", features = ["derive"] }, serde_json = "1" — verify `cargo build` passes. Note: use `std::sync::LazyLock` for static regex (stable since Rust 1.85, matches rust-version); do NOT add once_cell.
 - [ ] T002 [P] Create fixtures/valid.cypher and fixtures/invalid.cypher (use a known lint violation for invalid)
 - [ ] T003 [P] Create fixtures/valid.gram and fixtures/invalid.gram (use a known lint violation for invalid)
 - [ ] T004 [P] Create fixtures/doc_with_cypher.md (Markdown with a fenced cypher block containing a violation at a non-trivial line number, e.g. line 10+)

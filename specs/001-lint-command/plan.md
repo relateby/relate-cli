@@ -13,11 +13,11 @@ source context for output.
 
 ## Technical Context
 
-**Language/Version**: Rust, edition 2021, rust-version 1.80.0  
+**Language/Version**: Rust, edition 2021, rust-version 1.85.0  
 **Primary Dependencies**:
-- `cypher-data 0.2.2` — Cypher lint engine (lib target)
-- `gram-data 0.3.9` — Gram lint engine (lib target)
-- `gram-diagnostics 0.3.9` — shared `Diagnostic` type (serde built-in)
+- `cypher-data 0.2.3` — Cypher lint engine (lib target)
+- `gram-data 0.3.10` — Gram lint engine (lib target)
+- `gram-diagnostics 0.3.10` — shared `Diagnostic` type (serde built-in)
 - `ariadne 0.6` — human-readable diagnostic rendering
 - `walkdir 2` — recursive directory traversal
 - `regex 1` — Markdown/AsciiDoc fence extraction
@@ -91,18 +91,14 @@ unless `lint.rs` exceeds ~300 lines, at which point split into
 Add to `[dependencies]`:
 ```toml
 cypher-data = "0.2.3"
-# gram-data blocked — see gram-data/tree-sitter-gram#13 (needs tree-sitter ^0.26 upgrade)
+gram-data = "0.3.10"
+gram-diagnostics = "0.3.10"
 ariadne = "0.6"
 walkdir = "2"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ```
-
-`gram-data` and `gram-diagnostics` cannot be added until `gram-data` is upgraded to
-`tree-sitter ^0.26` (filed as [gram-data/tree-sitter-gram#13](https://github.com/gram-data/tree-sitter-gram/issues/13)).
-All Gram linting tasks (US2, US5 gram fences, T011, T016, T018, T031, T034) are blocked pending
-that upgrade. `gram_diagnostics::Diagnostic` is temporarily replaced by a local mirror type.
 
 Verify `cargo build` still passes.
 

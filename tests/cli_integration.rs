@@ -106,8 +106,6 @@ fn lint_unsupported_explicit_exits_two() {
 
 #[test]
 fn lint_gram_clean_exits_zero() {
-    // gram-data is stubbed; valid and invalid .gram both exit 0 until
-    // gram-data/tree-sitter-gram#13 is resolved.
     Command::cargo_bin("relate")
         .unwrap()
         .arg("lint")
