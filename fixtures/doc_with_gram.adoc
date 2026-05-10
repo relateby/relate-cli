@@ -1,0 +1,10 @@
+= Gram Graph Examples
+
+This document contains Gram graph notation examples.
+
+== Relationships
+
+[source,gram]
+----
+(alice:Person {name: "Alice"})-[:KNOWS]->(bob:Person {name: "Bob"
+----

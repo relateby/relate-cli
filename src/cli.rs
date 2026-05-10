@@ -40,7 +40,8 @@ pub struct Neo4jArgs {
 }
 
 impl Neo4jArgs {
-    /// Returns the password or an error — call only from commands that require Neo4j.
+    /// Returns the password or an error — called by commands that require Neo4j (write, read).
+    #[allow(dead_code)]
     pub fn require_password(&self) -> anyhow::Result<&str> {
         self.password
             .as_deref()
@@ -62,6 +63,15 @@ pub enum Commands {
     Mcp(McpArgs),
 }
 
+/// Language selection for --expr and stdin input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum Lang {
+    /// Cypher query language
+    Cypher,
+    /// Gram graph notation
+    Gram,
+}
+
 #[derive(Debug, clap::Args)]
 pub struct LintArgs {
     /// Files or directories to lint (.cypher or .gram); reads stdin if omitted
@@ -70,6 +80,10 @@ pub struct LintArgs {
     /// Lint an inline expression instead of a file
     #[arg(short = 'e', long = "expr")]
     pub expr: Option<String>,
+
+    /// Language for --expr or stdin
+    #[arg(long, value_enum, default_value_t = Lang::Cypher)]
+    pub lang: Lang,
 
     /// Output results as JSON
     #[arg(long)]

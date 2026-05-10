@@ -1,0 +1,1 @@
+(alice:Person {name: "Alice"})-[:KNOWS]->(bob:Person {name: "Bob"})
