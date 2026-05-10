@@ -14,10 +14,17 @@ enum StatementSource {
     File {
         path: PathBuf,
         line: u32,
-        /// 0-based index within the file. Used for display: index 0 shows just
-        /// the filename; subsequent statements also show the start line so the
-        /// user can locate them in multi-statement files.
+        /// 0-based index within the file; index 0 shows just the filename.
         statement_idx: usize,
+    },
+    /// Bare-name resolution: ./cypher/<name>.cypher
+    LibraryFile {
+        path: PathBuf,
+    },
+    /// file/stmt addressing: one named statement within a library file
+    LibraryStatement {
+        path: PathBuf,
+        stmt_name: String,
     },
 }
 
@@ -33,6 +40,10 @@ impl std::fmt::Display for StatementSource {
             StatementSource::File { path, line, .. } => {
                 write!(f, "{}:{}", path.display(), line)
             }
+            StatementSource::LibraryFile { path } => write!(f, "{}", path.display()),
+            StatementSource::LibraryStatement { path, stmt_name } => {
+                write!(f, "{} ({})", path.display(), stmt_name)
+            }
         }
     }
 }
@@ -43,6 +54,26 @@ impl std::fmt::Display for StatementSource {
 struct StatementEntry {
     source: StatementSource,
     text: String,
+    doc: Option<CypherDoc>,
+}
+
+// ── CypherDoc / ParamDecl ─────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+struct ParamDecl {
+    name: String,
+    type_: String,
+    required: bool,
+    default: Option<String>,
+    description: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct CypherDoc {
+    name: String,
+    description: Option<String>,
+    params: Vec<ParamDecl>,
+    returns_raw: Option<String>,
 }
 
 // ── T009: ParamValue / ParamMap ───────────────────────────────────────────────
@@ -76,8 +107,6 @@ struct QueryResult {
     columns: Vec<String>,
     rows: Vec<Vec<serde_json::Value>>,
     summary: QuerySummary,
-    /// True when the statement was classified as a write operation.
-    /// Used to display "(write completed)" vs "(no rows returned)".
     is_write: bool,
 }
 
@@ -88,6 +117,70 @@ enum Classification {
     Write { first_write_kind: String },
 }
 
+// ── QueryName — query resolution result ──────────────────────────────────────
+
+enum QueryName {
+    /// Explicit path: contains a separator or ends with .cypher
+    ExplicitPath(PathBuf),
+    /// Bare name: resolves to <cypher_dir>/<name>.cypher
+    BareName { name: String, resolved: PathBuf },
+    /// file/stmt address: one named statement inside a library file
+    StmtAddress { file: PathBuf, stmt_name: String },
+}
+
+/// Classify a [QUERY] argument into an explicit path, bare name, or file/stmt address.
+/// Pure function — no I/O.
+fn resolve_query_source(query: &str, cypher_dir: &Path) -> QueryName {
+    let ends_cypher = query.ends_with(".cypher");
+
+    // Check file/stmt form first: exactly one '/' with bare identifiers on both sides.
+    // This must come before the general separator check so that person/upsert is
+    // recognised as StmtAddress rather than ExplicitPath.
+    if !ends_cypher {
+        if let Some(slash_pos) = query.find('/') {
+            let file_part = &query[..slash_pos];
+            let stmt_part = &query[slash_pos + 1..];
+            if !file_part.contains('/')
+                && !stmt_part.contains('/')
+                && is_bare_identifier(file_part)
+                && is_bare_identifier(stmt_part)
+            {
+                let file = cypher_dir.join(format!("{file_part}.cypher"));
+                return QueryName::StmtAddress {
+                    file,
+                    stmt_name: stmt_part.to_string(),
+                };
+            }
+        }
+    }
+
+    // Explicit path: contains any path separator, starts with '.', or ends with .cypher
+    let has_separator = query.contains(std::path::MAIN_SEPARATOR)
+        || query.contains('/')
+        || query.contains('\\')
+        || query.starts_with('.');
+
+    if has_separator || ends_cypher {
+        return QueryName::ExplicitPath(PathBuf::from(query));
+    }
+
+    // Bare name
+    let resolved = cypher_dir.join(format!("{query}.cypher"));
+    QueryName::BareName {
+        name: query.to_string(),
+        resolved,
+    }
+}
+
+fn is_bare_identifier(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .next()
+            .map(|c| c.is_alphabetic() || c == '_')
+            .unwrap_or(false)
+        && s.chars().all(|c| c.is_alphanumeric() || c == '_')
+}
+
 // ── T011: Build queue from inline expressions ─────────────────────────────────
 
 fn build_queue_inline(exprs: &[String]) -> Vec<StatementEntry> {
@@ -96,8 +189,126 @@ fn build_queue_inline(exprs: &[String]) -> Vec<StatementEntry> {
         .map(|text| StatementEntry {
             source: StatementSource::Inline,
             text: text.clone(),
+            doc: None,
         })
         .collect()
+}
+
+// ── parse_cypherdoc — parse a /** ... */ block ────────────────────────────────
+
+fn parse_cypherdoc(raw: &str) -> Option<CypherDoc> {
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter::Language::from(
+            tree_sitter_cypherdoc::LANGUAGE,
+        ))
+        .ok()?;
+
+    let tree = parser.parse(raw, None)?;
+    let root = tree.root_node();
+    if root.has_error() || root.kind() != "document" {
+        return None;
+    }
+
+    let src = raw.as_bytes();
+    let mut name = String::new();
+    let mut description_lines: Vec<String> = Vec::new();
+    let mut params: Vec<ParamDecl> = Vec::new();
+    let mut returns_raw: Option<String> = None;
+
+    let mut cursor = root.walk();
+    for child in root.named_children(&mut cursor) {
+        match child.kind() {
+            "name" => {
+                name = child.utf8_text(src).unwrap_or("").trim().to_string();
+            }
+            "description" => {
+                let mut dcursor = child.walk();
+                for line_node in child.named_children(&mut dcursor) {
+                    if let Ok(t) = line_node.utf8_text(src) {
+                        description_lines.push(t.trim().to_string());
+                    }
+                }
+            }
+            "param_tag" => {
+                let type_ = child
+                    .child_by_field_name("type")
+                    .and_then(|n| {
+                        n.named_child(0)
+                            .and_then(|sc| sc.child_by_field_name("name"))
+                            .and_then(|nm| nm.utf8_text(src).ok())
+                            .map(str::to_string)
+                    })
+                    .unwrap_or_default();
+
+                let param_node = child.child_by_field_name("param")?;
+                let (param_name, required, default) = match param_node.kind() {
+                    "required_param" => {
+                        let nm = param_node
+                            .child_by_field_name("name")
+                            .and_then(|n| n.utf8_text(src).ok())
+                            .unwrap_or("")
+                            .trim()
+                            .to_string();
+                        (nm, true, None)
+                    }
+                    "optional_param" => {
+                        let nm = param_node
+                            .child_by_field_name("name")
+                            .and_then(|n| n.utf8_text(src).ok())
+                            .unwrap_or("")
+                            .trim()
+                            .to_string();
+                        let def = param_node.child_by_field_name("default").and_then(|n| {
+                            n.named_child(0)
+                                .and_then(|d| d.utf8_text(src).ok())
+                                .map(str::to_string)
+                        });
+                        (nm, false, def)
+                    }
+                    _ => continue,
+                };
+
+                // Strip the conventional leading "- " from tag_description text.
+                let description = child
+                    .child_by_field_name("description")
+                    .and_then(|n| n.utf8_text(src).ok())
+                    .map(|s| s.trim().trim_start_matches('-').trim().to_string())
+                    .filter(|s| !s.is_empty());
+
+                params.push(ParamDecl {
+                    name: param_name,
+                    type_,
+                    required,
+                    default,
+                    description,
+                });
+            }
+            "returns_tag" => {
+                if let Ok(t) = child.utf8_text(src) {
+                    returns_raw = Some(t.trim().to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if name.is_empty() {
+        return None;
+    }
+
+    let description = if description_lines.is_empty() {
+        None
+    } else {
+        Some(description_lines.join("\n"))
+    };
+
+    Some(CypherDoc {
+        name,
+        description,
+        params,
+        returns_raw,
+    })
 }
 
 // ── T016: Build queue from a .cypher file ─────────────────────────────────────
@@ -116,25 +327,42 @@ fn build_queue_file(path: &Path) -> Result<Vec<StatementEntry>> {
 
     let root = tree.root_node();
     let mut entries = Vec::new();
-    let mut cursor = root.walk();
+    let children: Vec<tree_sitter::Node> = {
+        let mut c = root.walk();
+        root.children(&mut c).collect()
+    };
 
-    for child in root.children(&mut cursor) {
-        // Only "statement" nodes are Cypher statements.
-        // "doc_comment" (cypherdoc), ";" separators, ERROR nodes, etc. are skipped.
-        if child.kind() != "statement" {
-            continue;
+    let mut last_doc: Option<CypherDoc> = None;
+
+    for child in &children {
+        match child.kind() {
+            "doc_comment" => {
+                let raw = source[child.byte_range()].to_string();
+                last_doc = parse_cypherdoc(&raw);
+            }
+            "statement" => {
+                let text = source[child.byte_range()].trim().to_string();
+                let line = child.start_position().row as u32 + 1;
+                let statement_idx = entries.len();
+                entries.push(StatementEntry {
+                    source: StatementSource::File {
+                        path: path.to_owned(),
+                        line,
+                        statement_idx,
+                    },
+                    text,
+                    doc: last_doc.take(),
+                });
+            }
+            _ => {
+                // Only reset last_doc for named nodes that are neither doc_comment nor statement.
+                // Unnamed nodes (whitespace, punctuation) are extras in tree-sitter and should
+                // not interrupt the doc_comment → statement association.
+                if child.is_named() && child.kind() != ";" {
+                    last_doc = None;
+                }
+            }
         }
-        let text = source[child.byte_range()].trim().to_string();
-        let line = child.start_position().row as u32 + 1; // 1-based
-        let statement_idx = entries.len();
-        entries.push(StatementEntry {
-            source: StatementSource::File {
-                path: path.to_owned(),
-                line,
-                statement_idx,
-            },
-            text,
-        });
     }
 
     if entries.is_empty() {
@@ -142,6 +370,94 @@ fn build_queue_file(path: &Path) -> Result<Vec<StatementEntry>> {
     }
 
     Ok(entries)
+}
+
+// ── filter_by_stmt_name ───────────────────────────────────────────────────────
+
+fn filter_by_stmt_name(
+    entries: Vec<StatementEntry>,
+    stmt_name: &str,
+) -> Result<Vec<StatementEntry>> {
+    let available: Vec<String> = entries
+        .iter()
+        .filter_map(|e| e.doc.as_ref().map(|d| d.name.clone()))
+        .collect();
+
+    let filtered: Vec<StatementEntry> = entries
+        .into_iter()
+        .filter(|e| e.doc.as_ref().map(|d| d.name == stmt_name).unwrap_or(false))
+        .collect();
+
+    if filtered.is_empty() {
+        let names = if available.is_empty() {
+            "(none — no cypherdoc found in file)".to_string()
+        } else {
+            available.join(", ")
+        };
+        return Err(anyhow!(
+            "statement '{stmt_name}' not found\n  Available statements: {names}\n  \
+             Hint: use 'relate query --describe <file>' to see full documentation"
+        ));
+    }
+
+    Ok(filtered)
+}
+
+// ── open_library_entries — resolve QueryName to StatementEntry list ──────────
+
+fn open_library_entries(name: &QueryName, cypher_dir: &Path) -> Result<Vec<StatementEntry>> {
+    match name {
+        QueryName::ExplicitPath(path) => build_queue_file(path),
+        QueryName::BareName {
+            name: bare,
+            resolved,
+        } => {
+            if !resolved.exists() {
+                eprintln!(
+                    "Error: query '{bare}' not found in {}\n  (looked for: {})",
+                    cypher_dir.display(),
+                    resolved.display()
+                );
+                std::process::exit(1);
+            }
+            let mut entries = build_queue_file(resolved)?;
+            for entry in &mut entries {
+                entry.source = StatementSource::LibraryFile {
+                    path: resolved.clone(),
+                };
+            }
+            Ok(entries)
+        }
+        QueryName::StmtAddress { file, stmt_name } => {
+            if !file.exists() {
+                let bare = file.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
+                eprintln!(
+                    "Error: query '{bare}' not found in {}\n  (looked for: {})",
+                    cypher_dir.display(),
+                    file.display()
+                );
+                std::process::exit(1);
+            }
+            let entries = build_queue_file(file)?;
+            let filtered = match filter_by_stmt_name(entries, stmt_name) {
+                Ok(f) => f,
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            };
+            Ok(filtered
+                .into_iter()
+                .map(|mut e| {
+                    e.source = StatementSource::LibraryStatement {
+                        path: file.clone(),
+                        stmt_name: stmt_name.clone(),
+                    };
+                    e
+                })
+                .collect())
+        }
+    }
 }
 
 // ── T012: Preflight Stage 1 — Lint ───────────────────────────────────────────
@@ -220,8 +536,6 @@ fn preflight_lint(queue: &[StatementEntry]) {
 
 // ── T028: Write classification ────────────────────────────────────────────────
 
-// Node kinds for write clauses in tree-sitter-cypher 0.2.x.
-// "call_clause" is classified conservatively as Write.
 const WRITE_CLAUSE_KINDS: &[&str] = &[
     "create_clause",
     "merge_clause",
@@ -331,12 +645,195 @@ fn load_params_file(path: &Path) -> Result<ParamMap> {
         .collect())
 }
 
+/// Parse a Cypher map literal string like `{name: "Alice", age: 30}` into a ParamMap.
+///
+/// Wraps the input in `RETURN <input>` and walks the tree-sitter AST.
+/// Keys must be unquoted Cypher identifiers (standard Cypher map syntax).
+/// Map entry structure: property_key_value → identifier (key) + expression → value_node.
+fn parse_map_literal(s: &str) -> Result<ParamMap> {
+    let wrapped = format!("RETURN {s}");
+
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter::Language::from(tree_sitter_cypher::LANGUAGE))
+        .map_err(|e| anyhow!("failed to initialise Cypher parser: {e}"))?;
+
+    let tree = parser
+        .parse(&wrapped, None)
+        .ok_or_else(|| anyhow!("failed to parse parameter map"))?;
+
+    let src = wrapped.as_bytes();
+
+    // Walk the tree to find the first map_literal node.
+    fn find_map_literal<'a>(node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
+        if node.kind() == "map_literal" {
+            return Some(node);
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if let Some(n) = find_map_literal(child) {
+                return Some(n);
+            }
+        }
+        None
+    }
+
+    let map_node = find_map_literal(tree.root_node()).ok_or_else(|| {
+        anyhow!(
+            "invalid parameter map — expected a Cypher map literal like '{{name: \"Alice\", age: 30}}'\n  \
+             Got: {s:?}\n  Hint: use --param name=value for key=value syntax"
+        )
+    })?;
+
+    let mut result = ParamMap::new();
+    let mut cursor = map_node.walk();
+
+    // tree-sitter-cypher map entries are `property_key_value` nodes.
+    // Each has two named children: identifier (key) + expression (value wrapper).
+    for entry in map_node.named_children(&mut cursor) {
+        if entry.kind() != "property_key_value" {
+            continue;
+        }
+
+        // Key: first named child — always an identifier in Cypher map syntax
+        let key_node = match entry.named_child(0) {
+            Some(n) => n,
+            None => continue,
+        };
+        let key = key_node.utf8_text(src).unwrap_or("").trim().to_string();
+
+        // Value: second named child is an `expression` node; actual value is inside it
+        let expr_node = match entry.named_child(1) {
+            Some(n) => n,
+            None => continue,
+        };
+        let val_node = expr_node.named_child(0).unwrap_or(expr_node);
+
+        let value = coerce_map_value(val_node, src)?;
+        result.insert(key, value);
+    }
+
+    Ok(result)
+}
+
+fn coerce_map_value(node: tree_sitter::Node, src: &[u8]) -> Result<ParamValue> {
+    let text = node.utf8_text(src).unwrap_or("").trim();
+    match node.kind() {
+        "integer_literal" => {
+            let i: i64 = text
+                .parse()
+                .map_err(|_| anyhow!("cannot parse integer: {text:?}"))?;
+            Ok(ParamValue::Integer(i))
+        }
+        "float_literal" => {
+            let f: f64 = text
+                .parse()
+                .map_err(|_| anyhow!("cannot parse float: {text:?}"))?;
+            Ok(ParamValue::Float(f))
+        }
+        "boolean_literal" => Ok(ParamValue::Boolean(text == "true")),
+        "null_literal" => Ok(ParamValue::Json(serde_json::Value::Null)),
+        "string_literal" => {
+            // Strip surrounding single or double quotes
+            let inner = text
+                .trim_start_matches('"')
+                .trim_end_matches('"')
+                .trim_start_matches('\'')
+                .trim_end_matches('\'');
+            Ok(ParamValue::String(inner.to_string()))
+        }
+        "map_literal" => {
+            let json = map_literal_to_json(node, src)?;
+            Ok(ParamValue::Json(json))
+        }
+        "list_literal" => {
+            let json = list_literal_to_json(node, src)?;
+            Ok(ParamValue::Json(json))
+        }
+        _ => Ok(ParamValue::String(text.to_string())),
+    }
+}
+
+fn map_literal_to_json(node: tree_sitter::Node, src: &[u8]) -> Result<serde_json::Value> {
+    let mut obj = serde_json::Map::new();
+    let mut cursor = node.walk();
+    for entry in node.named_children(&mut cursor) {
+        if entry.kind() != "property_key_value" {
+            continue;
+        }
+        let key = entry
+            .named_child(0)
+            .and_then(|n| n.utf8_text(src).ok())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let val = entry
+            .named_child(1)
+            .and_then(|expr| expr.named_child(0))
+            .map(|n| literal_to_json(n, src))
+            .unwrap_or(Ok(serde_json::Value::Null))?;
+        obj.insert(key, val);
+    }
+    Ok(serde_json::Value::Object(obj))
+}
+
+fn list_literal_to_json(node: tree_sitter::Node, src: &[u8]) -> Result<serde_json::Value> {
+    let mut arr = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        let item = if child.kind() == "expression" {
+            child
+                .named_child(0)
+                .map(|n| literal_to_json(n, src))
+                .unwrap_or(Ok(serde_json::Value::Null))?
+        } else {
+            literal_to_json(child, src)?
+        };
+        arr.push(item);
+    }
+    Ok(serde_json::Value::Array(arr))
+}
+
+fn literal_to_json(node: tree_sitter::Node, src: &[u8]) -> Result<serde_json::Value> {
+    let text = node.utf8_text(src).unwrap_or("").trim();
+    match node.kind() {
+        "integer_literal" => Ok(serde_json::Value::Number(
+            text.parse::<i64>()
+                .map(serde_json::Number::from)
+                .unwrap_or(serde_json::Number::from(0)),
+        )),
+        "float_literal" => Ok(serde_json::Value::Number(
+            text.parse::<f64>()
+                .ok()
+                .and_then(serde_json::Number::from_f64)
+                .unwrap_or(serde_json::Number::from(0)),
+        )),
+        "boolean_literal" => Ok(serde_json::Value::Bool(text == "true")),
+        "null_literal" => Ok(serde_json::Value::Null),
+        "string_literal" => {
+            let inner = text
+                .trim_start_matches('"')
+                .trim_end_matches('"')
+                .trim_start_matches('\'')
+                .trim_end_matches('\'');
+            Ok(serde_json::Value::String(inner.to_string()))
+        }
+        "map_literal" => map_literal_to_json(node, src),
+        "list_literal" => list_literal_to_json(node, src),
+        _ => Ok(serde_json::Value::String(text.to_string())),
+    }
+}
+
 fn build_param_map(args: &QueryArgs) -> Result<ParamMap> {
-    let mut params: ParamMap = if let Some(path) = &args.params {
+    // [PARAMS] and --params are mutually exclusive (checked in run())
+    let mut params: ParamMap = if let Some(map_str) = &args.params_map {
+        parse_map_literal(map_str)?
+    } else if let Some(path) = &args.params {
         load_params_file(path)?
     } else {
         HashMap::new()
     };
+
     for s in &args.param {
         let (k, v) = parse_param_flag(s)?;
         params.insert(k, v);
@@ -351,7 +848,6 @@ fn collect_param_refs_recursive(
     source: &[u8],
     refs: &mut HashSet<String>,
 ) {
-    // tree-sitter-cypher represents $name as a "parameter" node
     if node.kind() == "parameter" {
         if let Ok(text) = node.utf8_text(source) {
             let name = text.trim_start_matches('$').to_string();
@@ -383,39 +879,260 @@ fn collect_param_refs(text: &str) -> HashSet<String> {
     refs
 }
 
+fn format_cypherdoc_hint(doc: &CypherDoc) -> String {
+    let mut lines = Vec::new();
+    if let Some(desc) = &doc.description {
+        lines.push(desc.clone());
+    }
+    for p in &doc.params {
+        let sig = if p.required {
+            format!("@param {{{}}} {}", p.type_, p.name)
+        } else {
+            format!(
+                "@param {{{}}} [{}={}]",
+                p.type_,
+                p.name,
+                p.default.as_deref().unwrap_or("")
+            )
+        };
+        let desc_part = p
+            .description
+            .as_deref()
+            .map(|d| format!(" - {d}"))
+            .unwrap_or_default();
+        lines.push(format!("  {sig}{desc_part}"));
+    }
+    lines.join("\n")
+}
+
 fn preflight_params(queue: &[StatementEntry], params: &ParamMap) {
-    let mut all_refs: HashSet<String> = HashSet::new();
-    let mut ref_to_source: HashMap<String, String> = HashMap::new();
+    let mut missing = false;
 
     for entry in queue {
-        for name in collect_param_refs(&entry.text) {
-            ref_to_source
-                .entry(name.clone())
-                .or_insert_with(|| entry.source.to_string());
-            all_refs.insert(name);
+        let ast_refs = collect_param_refs(&entry.text);
+
+        if let Some(doc) = &entry.doc {
+            // Cypherdoc-aware: use ParamDecl to classify required vs optional.
+            let declared_names: HashSet<&str> =
+                doc.params.iter().map(|p| p.name.as_str()).collect();
+
+            for decl in &doc.params {
+                if decl.required && !params.contains_key(&decl.name) {
+                    eprintln!("Error: missing required parameter '${}'", decl.name);
+                    eprintln!("  Source: {}", entry.source);
+                    eprintln!("  Hint: pass --param {}=<value>", decl.name);
+                    eprintln!();
+                    eprintln!("  --- Documentation ---");
+                    eprintln!("  {}", format_cypherdoc_hint(doc));
+                    missing = true;
+                }
+            }
+
+            // Also check AST refs not mentioned in cypherdoc (treat as required).
+            for name in &ast_refs {
+                if !declared_names.contains(name.as_str()) && !params.contains_key(name.as_str()) {
+                    eprintln!("Error: missing required parameter '${name}'");
+                    eprintln!("  Source: {}", entry.source);
+                    eprintln!("  Hint: pass --param {name}=<value>");
+                    missing = true;
+                }
+            }
+        } else {
+            // No cypherdoc: treat all $x refs as required (Milestone 1 behaviour).
+            let mut sorted_refs: Vec<&String> = ast_refs.iter().collect();
+            sorted_refs.sort();
+            for name in sorted_refs {
+                if !params.contains_key(name.as_str()) {
+                    eprintln!("Error: missing required parameter '${name}'");
+                    eprintln!("  Source: {}", entry.source);
+                    eprintln!("  Hint: pass --param {name}=<value>");
+                    missing = true;
+                }
+            }
         }
     }
 
-    let mut missing = false;
-    let mut sorted_refs: Vec<&String> = all_refs.iter().collect();
-    sorted_refs.sort();
-    for name in sorted_refs {
-        if !params.contains_key(name.as_str()) {
-            let source = ref_to_source.get(name).map(String::as_str).unwrap_or("?");
-            eprintln!("Error: missing required parameter '${name}'");
-            eprintln!("  Source: {source}");
-            eprintln!("  Hint: pass --param {name}=<value>");
-            missing = true;
-        }
-    }
     if missing {
         std::process::exit(1);
     }
 
+    // Warn about unused params.
+    let all_refs: HashSet<String> = queue
+        .iter()
+        .flat_map(|e| collect_param_refs(&e.text))
+        .collect();
     for key in params.keys() {
         if !all_refs.contains(key.as_str()) {
             eprintln!("Warning: parameter '{key}' is not referenced in any statement");
         }
+    }
+}
+
+// ── print_list / list_library ─────────────────────────────────────────────────
+
+/// One-line summary of a named statement, used by --list.
+struct ListEntry {
+    /// Addressable name: "file/stmt" for library-wide, "stmt" for single-file.
+    name: String,
+    description: String,
+}
+
+fn collect_list_entries(entries: &[StatementEntry], file_stem: Option<&str>) -> Vec<ListEntry> {
+    entries
+        .iter()
+        .map(|e| {
+            let stmt_name = e
+                .doc
+                .as_ref()
+                .map(|d| d.name.as_str())
+                .unwrap_or("(unnamed)");
+            let name = match file_stem {
+                Some(stem) => format!("{stem}/{stmt_name}"),
+                None => stmt_name.to_string(),
+            };
+            let description = e
+                .doc
+                .as_ref()
+                .and_then(|d| d.description.as_deref())
+                .map(|s| s.lines().next().unwrap_or("").to_string())
+                .unwrap_or_default();
+            ListEntry { name, description }
+        })
+        .collect()
+}
+
+fn print_list_entries(list: &[ListEntry], json: bool) {
+    if json {
+        let arr: Vec<serde_json::Value> = list
+            .iter()
+            .map(|e| {
+                serde_json::json!({
+                    "name": e.name,
+                    "description": e.description
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&arr).unwrap_or_else(|_| "[]".to_string())
+        );
+    } else {
+        let col_width = list.iter().map(|e| e.name.len()).max().unwrap_or(0) + 2;
+        for entry in list {
+            if entry.description.is_empty() {
+                println!("{}", entry.name);
+            } else {
+                println!("{:<col_width$}{}", entry.name, entry.description);
+            }
+        }
+    }
+}
+
+/// List named statements for a single resolved file (--list with [QUERY]).
+fn print_list(entries: &[StatementEntry], json: bool) {
+    let list = collect_list_entries(entries, None);
+    print_list_entries(&list, json);
+}
+
+/// List all named statements across every .cypher file in cypher_dir (--list with no [QUERY]).
+fn list_library(cypher_dir: &std::path::Path, json: bool) {
+    let mut files: Vec<std::path::PathBuf> = match std::fs::read_dir(cypher_dir) {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().map(|e| e == "cypher").unwrap_or(false))
+            .collect(),
+        Err(_) => {
+            eprintln!(
+                "Error: query library directory '{}' not found",
+                cypher_dir.display()
+            );
+            std::process::exit(1);
+        }
+    };
+    files.sort();
+
+    if json {
+        // Collect all entries into one flat JSON array with "file/stmt" names.
+        let mut all: Vec<ListEntry> = Vec::new();
+        for file in &files {
+            let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if let Ok(entries) = build_queue_file(file) {
+                all.extend(collect_list_entries(&entries, Some(stem)));
+            }
+        }
+        print_list_entries(&all, true);
+    } else {
+        // Group by file, one header per file.
+        for file in &files {
+            let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if let Ok(entries) = build_queue_file(file) {
+                println!("{stem}");
+                let list = collect_list_entries(&entries, None);
+                let col_width = list.iter().map(|e| e.name.len()).max().unwrap_or(0) + 2;
+                for entry in &list {
+                    if entry.description.is_empty() {
+                        println!("  {}", entry.name);
+                    } else {
+                        println!("  {:<col_width$}{}", entry.name, entry.description);
+                    }
+                }
+                println!();
+            }
+        }
+    }
+}
+
+// ── print_describe ─────────────────────────────────────────────────────────────
+
+fn print_describe(entries: &[StatementEntry]) {
+    const RULER_WIDTH: usize = 78;
+
+    for entry in entries {
+        // Use "source (doc_name)" when the entry has a cypherdoc name; otherwise just source.
+        let label = if let Some(doc) = &entry.doc {
+            format!("{} ({})", entry.source, doc.name)
+        } else {
+            entry.source.to_string()
+        };
+        let ruler_fill = RULER_WIDTH.saturating_sub(label.len() + 4);
+        let ruler: String = "─".repeat(ruler_fill);
+        println!("── {label} {ruler}");
+
+        if let Some(doc) = &entry.doc {
+            if let Some(desc) = &doc.description {
+                println!("{desc}");
+                println!();
+            }
+            for p in &doc.params {
+                let sig = if p.required {
+                    format!("@param {{{}}} {}", p.type_, p.name)
+                } else {
+                    format!(
+                        "@param {{{}}} [{}={}]",
+                        p.type_,
+                        p.name,
+                        p.default.as_deref().unwrap_or("")
+                    )
+                };
+                let desc_part = p
+                    .description
+                    .as_deref()
+                    .map(|d| format!(" - {d}"))
+                    .unwrap_or_default();
+                println!("{sig}{desc_part}");
+            }
+            if let Some(ret) = &doc.returns_raw {
+                println!("{ret}");
+            }
+        } else {
+            println!("(no documentation)");
+        }
+
+        println!();
+        for line in entry.text.lines() {
+            println!("  {line}");
+        }
+        println!();
     }
 }
 
@@ -487,7 +1204,6 @@ async fn execute_queue(
             }
         };
 
-        // Collect column names from the first row or fall back to empty
         let mut columns: Vec<String> = Vec::new();
         let mut rows: Vec<Vec<serde_json::Value>> = Vec::new();
         let mut first = true;
@@ -517,9 +1233,6 @@ async fn execute_queue(
             }
         }
 
-        // Consume the stream to completion; counters require the
-        // `unstable-result-summary` neo4rs feature which has a compilation
-        // bug in 0.9.0-rc.9. Summary fields stay zeroed until that stabilises.
         let _ = stream.finish().await;
 
         results.push(QueryResult {
@@ -676,11 +1389,25 @@ pub async fn run(args: QueryArgs, neo4j: Neo4jArgs) -> Result<()> {
         std::process::exit(1);
     }
 
+    // Mutual exclusion: [PARAMS] and --params are mutually exclusive
+    if args.params_map.is_some() && args.params.is_some() {
+        eprintln!("Error: [PARAMS] and --params are mutually exclusive");
+        eprintln!("       provide inline parameters or a --params file, not both");
+        std::process::exit(1);
+    }
+
+    // --list with no [QUERY]: enumerate the whole library and exit
+    if args.list && args.query.is_none() && args.expr.is_empty() {
+        list_library(&args.cypher_dir, args.json);
+        return Ok(());
+    }
+
     // Build statement queue
     let queue = if !args.expr.is_empty() {
         build_queue_inline(&args.expr)
-    } else if let Some(ref path) = args.query {
-        match build_queue_file(path) {
+    } else if let Some(ref query_str) = args.query {
+        let name = resolve_query_source(query_str, &args.cypher_dir);
+        match open_library_entries(&name, &args.cypher_dir) {
             Ok(q) => q,
             Err(e) => {
                 eprintln!("Error: {e}");
@@ -692,6 +1419,18 @@ pub async fn run(args: QueryArgs, neo4j: Neo4jArgs) -> Result<()> {
         eprintln!("       run 'relate query --help' for usage");
         std::process::exit(1);
     };
+
+    // --list with [QUERY]: show statements in the resolved file and exit
+    if args.list {
+        print_list(&queue, args.json);
+        return Ok(());
+    }
+
+    // --describe: print documentation and exit without executing
+    if args.describe {
+        print_describe(&queue);
+        return Ok(());
+    }
 
     // Preflight pipeline (all before opening a Bolt connection)
     preflight_lint(&queue);
@@ -731,6 +1470,9 @@ pub async fn run(args: QueryArgs, neo4j: Neo4jArgs) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    // ── Milestone 1 tests (preserved) ────────────────────────────────────────
 
     #[test]
     fn test_build_queue_inline() {
@@ -759,7 +1501,6 @@ mod tests {
         assert_eq!(k, "active");
         assert!(matches!(v, ParamValue::Boolean(true)));
 
-        // = in value: only first = splits
         let (k, v) = parse_param_flag("url=http://example.com/path?q=1").unwrap();
         assert_eq!(k, "url");
         assert!(matches!(v, ParamValue::String(ref s) if s == "http://example.com/path?q=1"));
@@ -799,5 +1540,199 @@ mod tests {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let err = build_queue_file(tmp.path()).unwrap_err();
         assert!(err.to_string().contains("no statements found"));
+    }
+
+    // ── T009: resolve_query_source tests (US1) ───────────────────────────────
+
+    #[test]
+    fn test_resolve_bare_name() {
+        let dir = Path::new("./cypher");
+        let result = resolve_query_source("find_person", dir);
+        assert!(matches!(result, QueryName::BareName { ref name, .. } if name == "find_person"));
+        if let QueryName::BareName { resolved, .. } = result {
+            assert_eq!(resolved, dir.join("find_person.cypher"));
+        }
+    }
+
+    #[test]
+    fn test_resolve_explicit_path_with_extension() {
+        let dir = Path::new("./cypher");
+        let result = resolve_query_source("queries/find.cypher", dir);
+        assert!(matches!(result, QueryName::ExplicitPath(_)));
+    }
+
+    #[test]
+    fn test_resolve_explicit_path_with_separator() {
+        let dir = Path::new("./cypher");
+        let result = resolve_query_source("./find_person.cypher", dir);
+        assert!(matches!(result, QueryName::ExplicitPath(_)));
+    }
+
+    #[test]
+    fn test_resolve_dotcypher_extension() {
+        let dir = Path::new("./cypher");
+        let result = resolve_query_source("find_person.cypher", dir);
+        assert!(matches!(result, QueryName::ExplicitPath(_)));
+    }
+
+    #[test]
+    fn test_resolve_stmt_address() {
+        let dir = Path::new("./cypher");
+        let result = resolve_query_source("person/upsert", dir);
+        assert!(
+            matches!(&result, QueryName::StmtAddress { stmt_name, .. } if stmt_name == "upsert")
+        );
+        if let QueryName::StmtAddress { file, stmt_name } = result {
+            assert_eq!(file, dir.join("person.cypher"));
+            assert_eq!(stmt_name, "upsert");
+        }
+    }
+
+    #[test]
+    fn test_resolve_cypher_dir_override() {
+        let custom_dir = Path::new("./queries");
+        let result = resolve_query_source("find_person", custom_dir);
+        if let QueryName::BareName { resolved, .. } = result {
+            assert_eq!(resolved, custom_dir.join("find_person.cypher"));
+        } else {
+            panic!("expected BareName");
+        }
+    }
+
+    // ── T012: parse_map_literal tests (US2) ─────────────────────────────────
+
+    #[test]
+    fn test_parse_map_literal_unquoted_keys() {
+        let map = parse_map_literal(r#"{name: "Alice", age: 30}"#).unwrap();
+        assert!(matches!(map.get("name"), Some(ParamValue::String(s)) if s == "Alice"));
+        assert!(matches!(map.get("age"), Some(ParamValue::Integer(30))));
+    }
+
+    #[test]
+    fn test_parse_map_literal_quoted_keys_not_valid_cypher() {
+        // Quoted keys like {"name": "Alice"} are JSON syntax, not Cypher map syntax.
+        // tree-sitter-cypher only supports unquoted identifier keys.
+        assert!(parse_map_literal(r#"{"name": "Alice", "age": 30}"#).is_err());
+    }
+
+    #[test]
+    fn test_parse_map_literal_boolean_and_null() {
+        let map = parse_map_literal(r#"{active: true, score: 3.14, nothing: null}"#).unwrap();
+        assert!(
+            matches!(map.get("active"), Some(ParamValue::Boolean(true))),
+            "got: {:?}",
+            map.get("active")
+        );
+        assert!(
+            matches!(map.get("score"), Some(ParamValue::Float(_))),
+            "got: {:?}",
+            map.get("score")
+        );
+        assert!(
+            matches!(
+                map.get("nothing"),
+                Some(ParamValue::Json(serde_json::Value::Null))
+            ),
+            "got: {:?}",
+            map.get("nothing")
+        );
+    }
+
+    #[test]
+    fn test_parse_map_literal_invalid() {
+        assert!(parse_map_literal("name=Alice").is_err());
+    }
+
+    // ── T017: parse_cypherdoc tests (US3) ────────────────────────────────────
+
+    #[test]
+    fn test_parse_cypherdoc_full_block() {
+        let raw = r#"/**
+ * upsert
+ *
+ * Create or update a person node.
+ *
+ * @param {string} name - Unique name for the person
+ * @param {string} [home=""] - Home city or region
+ * @returns {[person: node<Person>][]} - The upserted node
+ */"#;
+        let doc = parse_cypherdoc(raw).unwrap();
+        assert_eq!(doc.name, "upsert");
+        assert!(doc
+            .description
+            .as_deref()
+            .unwrap_or("")
+            .contains("Create or update"));
+        assert_eq!(doc.params.len(), 2);
+        assert_eq!(doc.params[0].name, "name");
+        assert!(doc.params[0].required);
+        assert_eq!(doc.params[1].name, "home");
+        assert!(!doc.params[1].required);
+        assert_eq!(doc.params[1].default.as_deref(), Some(r#""""#));
+        assert!(doc.returns_raw.is_some());
+    }
+
+    #[test]
+    fn test_parse_cypherdoc_name_only() {
+        let raw = "/** upsert */";
+        let doc = parse_cypherdoc(raw).unwrap();
+        assert_eq!(doc.name, "upsert");
+        assert!(doc.params.is_empty());
+    }
+
+    #[test]
+    fn test_parse_cypherdoc_invalid() {
+        assert!(parse_cypherdoc("/* not a cypherdoc */").is_none());
+        assert!(parse_cypherdoc("// line comment").is_none());
+    }
+
+    // ── T017: filter_by_stmt_name tests (US3) ────────────────────────────────
+
+    fn make_entry(name: &str) -> StatementEntry {
+        StatementEntry {
+            source: StatementSource::Inline,
+            text: format!("MATCH (n:{name}) RETURN n"),
+            doc: Some(CypherDoc {
+                name: name.to_string(),
+                description: None,
+                params: vec![],
+                returns_raw: None,
+            }),
+        }
+    }
+
+    #[test]
+    fn test_filter_by_stmt_name_hit() {
+        let entries = vec![make_entry("upsert"), make_entry("delete")];
+        let result = filter_by_stmt_name(entries, "upsert").unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].doc.as_ref().unwrap().name, "upsert");
+    }
+
+    #[test]
+    fn test_filter_by_stmt_name_miss_lists_available() {
+        let entries = vec![make_entry("upsert"), make_entry("delete")];
+        let err = filter_by_stmt_name(entries, "by_age").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("by_age"),
+            "error should mention the name: {msg}"
+        );
+        assert!(msg.contains("upsert"), "error should list available: {msg}");
+        assert!(msg.contains("delete"), "error should list available: {msg}");
+    }
+
+    // ── T021: --cypher-dir override (US5) ────────────────────────────────────
+
+    #[test]
+    fn test_cypher_dir_override_resolves_to_custom_dir() {
+        let custom_dir = Path::new("/tmp/myqueries");
+        if let QueryName::BareName { resolved, .. } =
+            resolve_query_source("find_person", custom_dir)
+        {
+            assert_eq!(resolved, custom_dir.join("find_person.cypher"));
+        } else {
+            panic!("expected BareName");
+        }
     }
 }

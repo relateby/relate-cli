@@ -482,4 +482,150 @@ mod query {
             .code(1)
             .stderr(contains("mutually exclusive"));
     }
+
+    // ── Milestone 2 integration tests ────────────────────────────────────────
+
+    // T020: --describe prints cypherdoc without executing, exits 0
+    #[test]
+    fn describe_prints_doc_without_executing() {
+        use std::io::Write;
+        let mut f = NamedTempFile::with_suffix(".cypher").unwrap();
+        write!(
+            f,
+            r#"/**
+ * find_person
+ *
+ * Find a person by name.
+ *
+ * @param {{string}} name - Person name
+ * @returns {{[p: node<Person>][]}} - The matching node
+ */
+MATCH (p:Person {{name: $name}}) RETURN p"#
+        )
+        .unwrap();
+
+        cmd()
+            .args(["query", "--describe", f.path().to_str().unwrap()])
+            .assert()
+            .success()
+            .code(0)
+            .stdout(contains("find_person"))
+            .stdout(contains("@param"))
+            .stdout(contains("name"));
+    }
+
+    // T020: --describe with two cypherdoc-named statements shows both
+    // Statements in multi-statement files must be separated by semicolons.
+    #[test]
+    fn describe_multi_statement_shows_all() {
+        use std::io::Write;
+        let mut f = NamedTempFile::with_suffix(".cypher").unwrap();
+        write!(
+            f,
+            r#"/**
+ * upsert
+ * @param {{string}} name - Name
+ */
+MERGE (p:Person {{name: $name}}) RETURN p;
+
+/**
+ * delete
+ * @param {{string}} name - Name
+ */
+MATCH (p:Person {{name: $name}}) DETACH DELETE p"#
+        )
+        .unwrap();
+
+        let output = cmd()
+            .args(["query", "--describe", f.path().to_str().unwrap()])
+            .assert()
+            .success()
+            .code(0);
+        let out = std::str::from_utf8(&output.get_output().stdout).unwrap();
+        assert!(out.contains("upsert"), "should contain 'upsert': {out}");
+        assert!(out.contains("delete"), "should contain 'delete': {out}");
+    }
+
+    // T020: --describe does not produce JSON output (always human-readable)
+    #[test]
+    fn describe_ignores_json_flag() {
+        use std::io::Write;
+        let mut f = NamedTempFile::with_suffix(".cypher").unwrap();
+        write!(f, "/** find\n */\nMATCH (n) RETURN n").unwrap();
+
+        let output = cmd()
+            .args(["query", "--describe", "--json", f.path().to_str().unwrap()])
+            .assert()
+            .success()
+            .code(0);
+        let out = std::str::from_utf8(&output.get_output().stdout).unwrap();
+        assert!(
+            !out.starts_with('['),
+            "--describe should not output JSON: {out}"
+        );
+    }
+
+    // T022: --cypher-dir resolves bare name from a custom directory
+    #[test]
+    fn cypher_dir_override_finds_query_in_custom_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let query_file = dir.path().join("custom_query.cypher");
+        std::fs::write(&query_file, "MATCH (n) RETURN n").unwrap();
+
+        // Preflight passes (read-only, no params), runtime fails on port 1
+        cmd()
+            .args([
+                "query",
+                "--cypher-dir",
+                dir.path().to_str().unwrap(),
+                "--uri",
+                "bolt://127.0.0.1:1",
+                "--password",
+                "dummy",
+                "custom_query",
+            ])
+            .assert()
+            .failure()
+            .code(2); // preflight passes; runtime fails on unreachable URI
+    }
+
+    // T022: --cypher-dir with missing bare name shows the custom directory in error
+    #[test]
+    fn cypher_dir_override_missing_shows_custom_dir_in_error() {
+        let dir = tempfile::tempdir().unwrap();
+        cmd()
+            .args([
+                "query",
+                "--cypher-dir",
+                dir.path().to_str().unwrap(),
+                "nonexistent_query",
+            ])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("nonexistent_query"));
+    }
+
+    // [PARAMS] and --params mutual exclusion → exits 1
+    #[test]
+    fn params_map_and_params_file_mutual_exclusion() {
+        use std::io::Write;
+        let mut f = NamedTempFile::with_suffix(".cypher").unwrap();
+        write!(f, "MATCH (n) RETURN n").unwrap();
+        let mut pf = NamedTempFile::with_suffix(".json").unwrap();
+        write!(pf, "{{}}").unwrap();
+
+        cmd()
+            .args([
+                "query",
+                f.path().to_str().unwrap(),
+                "{name: \"Alice\"}",
+                "--params",
+                pf.path().to_str().unwrap(),
+            ])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("mutually exclusive"));
+    }
 }

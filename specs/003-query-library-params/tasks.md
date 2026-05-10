@@ -20,7 +20,7 @@ US5 reuses the `--cypher-dir` introduced by US1 and requires only tests.
 
 **Purpose**: Add the one new crate dependency before any implementation begins.
 
-- [ ] T001 Add `tree-sitter-cypherdoc = "0.2"` to `[dependencies]` in `Cargo.toml`; run `cargo build` to verify the crate resolves and compiles
+- [x] T001 Add `tree-sitter-cypherdoc = "0.2"` to `[dependencies]` in `Cargo.toml`; run `cargo build` to verify the crate resolves and compiles
 
 **Checkpoint**: `cargo build` succeeds with the new dependency.
 
@@ -33,11 +33,11 @@ any story phase begins. All changes are additive or backward-compatible.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T002 Change `QueryArgs.query` field from `Option<PathBuf>` to `Option<String>` in `src/cli.rs`; update `build_queue_file()` call site(s) in `src/commands/query.rs` to convert with `Path::new(&s)` where a `&Path` is needed
-- [ ] T003 [P] Add three new fields to `QueryArgs` in `src/cli.rs`: `params_map: Option<String>` (second positional, after `query`); `describe: bool` (`--describe` flag); `cypher_dir: PathBuf` (`--cypher-dir`, default `"./cypher/"`)
-- [ ] T004 [P] Add `StatementSource::LibraryFile { path: PathBuf, bare_name: String }` and `StatementSource::LibraryStatement { path: PathBuf, stmt_name: String }` variants with `Display` impls to the `StatementSource` enum in `src/commands/query.rs`
-- [ ] T005 Add `CypherDoc` struct (`name`, `description`, `params: Vec<ParamDecl>`, `returns_raw`) and `ParamDecl` struct (`name`, `type_`, `required`, `default`, `description`) to `src/commands/query.rs`; add `doc: Option<CypherDoc>` field to `StatementEntry`; update all `StatementEntry { source, text }` construction sites to `StatementEntry { source, text, doc: None }`
-- [ ] T006 Add `QueryName` enum (`ExplicitPath(PathBuf)`, `BareName { name, resolved }`, `StmtAddress { file, stmt_name }`) and `resolve_query_source(query: &str, cypher_dir: &Path) -> QueryName` pure function to `src/commands/query.rs` (Decision 9 + 10 from research.md)
+- [x] T002 Change `QueryArgs.query` field from `Option<PathBuf>` to `Option<String>` in `src/cli.rs`; update `build_queue_file()` call site(s) in `src/commands/query.rs` to convert with `Path::new(&s)` where a `&Path` is needed
+- [x] T003 [P] Add three new fields to `QueryArgs` in `src/cli.rs`: `params_map: Option<String>` (second positional, after `query`); `describe: bool` (`--describe` flag); `cypher_dir: PathBuf` (`--cypher-dir`, default `"./cypher/"`)
+- [x] T004 [P] Add `StatementSource::LibraryFile { path: PathBuf, bare_name: String }` and `StatementSource::LibraryStatement { path: PathBuf, stmt_name: String }` variants with `Display` impls to the `StatementSource` enum in `src/commands/query.rs`
+- [x] T005 Add `CypherDoc` struct (`name`, `description`, `params: Vec<ParamDecl>`, `returns_raw`) and `ParamDecl` struct (`name`, `type_`, `required`, `default`, `description`) to `src/commands/query.rs`; add `doc: Option<CypherDoc>` field to `StatementEntry`; update all `StatementEntry { source, text }` construction sites to `StatementEntry { source, text, doc: None }`
+- [x] T006 Add `QueryName` enum (`ExplicitPath(PathBuf)`, `BareName { name, resolved }`, `StmtAddress { file, stmt_name }`) and `resolve_query_source(query: &str, cypher_dir: &Path) -> QueryName` pure function to `src/commands/query.rs` (Decision 9 + 10 from research.md)
 
 **Checkpoint**: `cargo test` passes; all existing tests green; new types compile without warnings.
 
@@ -51,9 +51,9 @@ any story phase begins. All changes are additive or backward-compatible.
 `relate query find_person`; verify the query executes. Run `relate query unknown` and verify
 exit code 1 with a "not found" message naming the directory searched.
 
-- [ ] T007 [US1] Implement `open_library_file(name: &QueryName, cypher_dir: &Path) -> Result<Vec<StatementEntry>>` in `src/commands/query.rs` that handles `BareName` by opening `<cypher_dir>/<name>.cypher`; wire into `run()` to call it after `resolve_query_source()` when `args.query` is `Some` and not `--expr`
-- [ ] T008 [US1] Add "query not found" error path to `run()` in `src/commands/query.rs`: when the resolved file does not exist, print `Error: query '<name>' not found in <cypher_dir>  (looked for: <path>)` to stderr and `process::exit(1)`
-- [ ] T009 [US1] Add unit tests for `resolve_query_source()` covering: bare name → `BareName`; explicit path with separator → `ExplicitPath`; path ending `.cypher` → `ExplicitPath`; `file/stmt` form → `StmtAddress`; in `src/commands/query.rs` `#[cfg(test)]` module
+- [x] T007 [US1] Implement `open_library_file(name: &QueryName, cypher_dir: &Path) -> Result<Vec<StatementEntry>>` in `src/commands/query.rs` that handles `BareName` by opening `<cypher_dir>/<name>.cypher`; wire into `run()` to call it after `resolve_query_source()` when `args.query` is `Some` and not `--expr`
+- [x] T008 [US1] Add "query not found" error path to `run()` in `src/commands/query.rs`: when the resolved file does not exist, print `Error: query '<name>' not found in <cypher_dir>  (looked for: <path>)` to stderr and `process::exit(1)`
+- [x] T009 [US1] Add unit tests for `resolve_query_source()` covering: bare name → `BareName`; explicit path with separator → `ExplicitPath`; path ending `.cypher` → `ExplicitPath`; `file/stmt` form → `StmtAddress`; in `src/commands/query.rs` `#[cfg(test)]` module
 
 **Checkpoint**: `relate query find_person` works end-to-end; `relate query missing` exits 1 with a
 useful message; all unit tests pass.
@@ -68,9 +68,9 @@ useful message; all unit tests pass.
 (no Neo4j required for unit tests); verify `$name` resolves to `"Alice"`. Run with both
 `[PARAMS]` and `--params file` to verify mutual exclusion error (exit 1).
 
-- [ ] T010 [P] [US2] Implement `parse_map_literal(s: &str) -> Result<ParamMap>` in `src/commands/query.rs`: wrap input as `RETURN <s>`, parse with tree-sitter-cypher, walk the `map_literal` node, coerce values per Decision 8 (research.md)
-- [ ] T011 [US2] Update `build_param_map()` in `src/commands/query.rs`: load `args.params_map` via `parse_map_literal()` as the base layer (lowest precedence); add mutual exclusion check for `args.params_map.is_some() && args.params.is_some()` at the top of `run()` (exit 1 with message `Error: [PARAMS] and --params are mutually exclusive`)
-- [ ] T012 [US2] Add unit tests for `parse_map_literal()` in `src/commands/query.rs`: unquoted-key map; quoted-key map; integer/float/boolean/null values; invalid input → error; `--param` takes precedence over map on key conflict
+- [x] T010 [P] [US2] Implement `parse_map_literal(s: &str) -> Result<ParamMap>` in `src/commands/query.rs`: wrap input as `RETURN <s>`, parse with tree-sitter-cypher, walk the `map_literal` node, coerce values per Decision 8 (research.md)
+- [x] T011 [US2] Update `build_param_map()` in `src/commands/query.rs`: load `args.params_map` via `parse_map_literal()` as the base layer (lowest precedence); add mutual exclusion check for `args.params_map.is_some() && args.params.is_some()` at the top of `run()` (exit 1 with message `Error: [PARAMS] and --params are mutually exclusive`)
+- [x] T012 [US2] Add unit tests for `parse_map_literal()` in `src/commands/query.rs`: unquoted-key map; quoted-key map; integer/float/boolean/null values; invalid input → error; `--param` takes precedence over map on key conflict
 
 **Checkpoint**: Map literal parameters work independently of bare-name resolution; mutual exclusion
 tested; all unit tests pass.
@@ -86,11 +86,11 @@ tested; all unit tests pass.
 `upsert` and `delete`. Run `relate query person/upsert`; verify only the upsert statement
 executes. Run `relate query person/nonexistent`; verify exit 1 with available names listed.
 
-- [ ] T013 [US3] Implement `parse_cypherdoc(raw: &str) -> Option<CypherDoc>` in `src/commands/query.rs` using `tree_sitter_cypherdoc::LANGUAGE`: parse the `document` root; extract `name`, `description` lines, `param_tag` nodes (field `param` → `required_param` or `optional_param`), and `returns_tag` raw text
-- [ ] T014 [US3] Update `build_queue_file()` in `src/commands/query.rs`: after splitting statements from the cypher AST, for each `statement` node look for a preceding `doc_comment` sibling; if found, call `parse_cypherdoc()` and store the result in `StatementEntry.doc`
-- [ ] T015 [US3] Implement `filter_by_stmt_name(entries: Vec<StatementEntry>, stmt_name: &str) -> Result<Vec<StatementEntry>>` in `src/commands/query.rs`: filter to entries whose `doc.as_ref().map(|d| d.name.as_str()) == Some(stmt_name)`; if none found, return an error listing available names; wire `StmtAddress` handling into `run()` after `open_library_file()`
-- [ ] T016 [US3] Update preflight Stage 3 in `src/commands/query.rs`: when `entry.doc` is `Some(doc)`, use `ParamDecl.required` to classify each declared param as required/optional instead of treating all `$x` refs as required; append the failing statement's cypherdoc block (name, description, params) to missing-parameter error messages
-- [ ] T017 [US3] Add unit tests in `src/commands/query.rs` `#[cfg(test)]` module: `parse_cypherdoc()` with a full block (name + description + required + optional params + returns); `parse_cypherdoc()` with name-only block; `filter_by_stmt_name()` hits; `filter_by_stmt_name()` miss lists available names
+- [x] T013 [US3] Implement `parse_cypherdoc(raw: &str) -> Option<CypherDoc>` in `src/commands/query.rs` using `tree_sitter_cypherdoc::LANGUAGE`: parse the `document` root; extract `name`, `description` lines, `param_tag` nodes (field `param` → `required_param` or `optional_param`), and `returns_tag` raw text
+- [x] T014 [US3] Update `build_queue_file()` in `src/commands/query.rs`: after splitting statements from the cypher AST, for each `statement` node look for a preceding `doc_comment` sibling; if found, call `parse_cypherdoc()` and store the result in `StatementEntry.doc`
+- [x] T015 [US3] Implement `filter_by_stmt_name(entries: Vec<StatementEntry>, stmt_name: &str) -> Result<Vec<StatementEntry>>` in `src/commands/query.rs`: filter to entries whose `doc.as_ref().map(|d| d.name.as_str()) == Some(stmt_name)`; if none found, return an error listing available names; wire `StmtAddress` handling into `run()` after `open_library_file()`
+- [x] T016 [US3] Update preflight Stage 3 in `src/commands/query.rs`: when `entry.doc` is `Some(doc)`, use `ParamDecl.required` to classify each declared param as required/optional instead of treating all `$x` refs as required; append the failing statement's cypherdoc block (name, description, params) to missing-parameter error messages
+- [x] T017 [US3] Add unit tests in `src/commands/query.rs` `#[cfg(test)]` module: `parse_cypherdoc()` with a full block (name + description + required + optional params + returns); `parse_cypherdoc()` with name-only block; `filter_by_stmt_name()` hits; `filter_by_stmt_name()` miss lists available names
 
 **Checkpoint**: `relate query person/upsert '{name: "Alice"}' --write` executes a single named
 statement; missing required param includes cypherdoc in error; all unit tests pass.
@@ -105,9 +105,9 @@ statement; missing required param includes cypherdoc in error; all unit tests pa
 ruled-block format on stdout, no Bolt connection attempted, exit 0. Run against a file with no
 cypherdoc; verify "(no documentation)" placeholder.
 
-- [ ] T018 [US4] Implement `print_describe(entries: &[StatementEntry])` in `src/commands/query.rs`: for each entry print a `──` ruler with the source label, the cypherdoc (name, description, @param lines, @returns if present), and the statement text indented 2 spaces; use "(no documentation)" when `doc` is `None`
-- [ ] T019 [US4] Add early-return branch in `run()` in `src/commands/query.rs`: after building the statement queue (source resolution + cypherdoc parsing) and before preflight Stage 1 (lint), if `args.describe` is true call `print_describe(&queue)` and `return Ok(())`; no Bolt connection is opened
-- [ ] T020 [US4] Add integration tests in `tests/` using `assert_cmd`: `--describe` against a file with two cypherdoc-named statements; verify stdout contains both names and param lines; verify exit 0; verify `--describe` with `--json` produces no JSON (describe is always human-readable)
+- [x] T018 [US4] Implement `print_describe(entries: &[StatementEntry])` in `src/commands/query.rs`: for each entry print a `──` ruler with the source label, the cypherdoc (name, description, @param lines, @returns if present), and the statement text indented 2 spaces; use "(no documentation)" when `doc` is `None`
+- [x] T019 [US4] Add early-return branch in `run()` in `src/commands/query.rs`: after building the statement queue (source resolution + cypherdoc parsing) and before preflight Stage 1 (lint), if `args.describe` is true call `print_describe(&queue)` and `return Ok(())`; no Bolt connection is opened
+- [x] T020 [US4] Add integration tests in `tests/` using `assert_cmd`: `--describe` against a file with two cypherdoc-named statements; verify stdout contains both names and param lines; verify exit 0; verify `--describe` with `--json` produces no JSON (describe is always human-readable)
 
 **Checkpoint**: `--describe` exits 0 with formatted output; no connection required; integration
 tests pass.
@@ -122,8 +122,8 @@ of `./cypher/`.
 **Independent Test**: Place a `.cypher` file in a temp directory; run with `--cypher-dir <dir>`;
 verify the query is found and executed.
 
-- [ ] T021 [US5] Add unit test for `resolve_query_source()` with a non-default `cypher_dir` path in `src/commands/query.rs`: verify `BareName.resolved` points into the overridden directory; verify "not found" error message names the overridden directory
-- [ ] T022 [US5] Add integration test in `tests/` using `assert_cmd` and `tempfile`: create a `.cypher` file in a temp directory; run `relate query --cypher-dir <tmpdir> <name>`; verify the query is resolved and executed (or fails with the correct error if no Neo4j is available)
+- [x] T021 [US5] Add unit test for `resolve_query_source()` with a non-default `cypher_dir` path in `src/commands/query.rs`: verify `BareName.resolved` points into the overridden directory; verify "not found" error message names the overridden directory
+- [x] T022 [US5] Add integration test in `tests/` using `assert_cmd` and `tempfile`: create a `.cypher` file in a temp directory; run `relate query --cypher-dir <tmpdir> <name>`; verify the query is resolved and executed (or fails with the correct error if no Neo4j is available)
 
 **Checkpoint**: `--cypher-dir` override is validated; tests pass.
 
@@ -131,9 +131,9 @@ verify the query is found and executed.
 
 ## Final Phase: Polish & Cross-Cutting Concerns
 
-- [ ] T023 [P] Update `--help` text in `QueryArgs` in `src/cli.rs`: update `long_about` to describe bare-name resolution and `file/stmt` addressing; update `after_help` examples to show `relate query create_person '{name: "Alice"}' --write`, `relate query person/upsert`, and `relate query --describe person`
-- [ ] T024 [P] Update `skills/relate-query/SKILL.md`: add M2 capabilities (bare-name resolution, `[PARAMS]` map literal, `file/stmt` addressing, `--describe`, `--cypher-dir`); update the workflow section and anti-rationalization table
-- [ ] T025 Run `cargo clippy --all-targets` and fix all warnings; run `cargo fmt --check` and apply formatting; run `cargo test` to confirm all tests pass
+- [x] T023 [P] Update `--help` text in `QueryArgs` in `src/cli.rs`: update `long_about` to describe bare-name resolution and `file/stmt` addressing; update `after_help` examples to show `relate query create_person '{name: "Alice"}' --write`, `relate query person/upsert`, and `relate query --describe person`
+- [x] T024 [P] Update `skills/relate-query/SKILL.md`: add M2 capabilities (bare-name resolution, `[PARAMS]` map literal, `file/stmt` addressing, `--describe`, `--cypher-dir`); update the workflow section and anti-rationalization table
+- [x] T025 Run `cargo clippy --all-targets` and fix all warnings; run `cargo fmt --check` and apply formatting; run `cargo test` to confirm all tests pass
 
 **Checkpoint**: `cargo clippy`, `cargo fmt --check`, and `cargo test` all pass with zero warnings.
 

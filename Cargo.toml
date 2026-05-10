@@ -21,9 +21,9 @@ anyhow = "1.0"
 tokio = { version = "1", features = ["full"] }
 neo4rs = "0.9.0-rc.9"
 rmcp = { version = "1.6", features = ["server", "transport-io"] }
-cypher-data = "0.2.3"
-gram-data = "0.3.10"
-gram-diagnostics = "0.3.10"
+cypher-data = "0.2.6"
+gram-data = "0.3.11"
+gram-diagnostics = "0.3.11"
 ariadne = "0.6"
 walkdir = "2"
 regex = "1"
@@ -33,6 +33,7 @@ comfy-table = "7"
 dotenvy = "0.15"
 tree-sitter = "0.26"
 tree-sitter-cypher = "0.2"
+tree-sitter-cypherdoc = "0.2"
 
 [dev-dependencies]
 assert_cmd = "2"

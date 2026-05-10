@@ -29,5 +29,6 @@ pub fn from_cypher_diagnostic(d: cypher_data::types::Diagnostic) -> gram_diagnos
                 character: d.range.end.character,
             },
         },
+        help: None,
     }
 }
