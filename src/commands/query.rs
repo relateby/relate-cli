@@ -241,7 +241,9 @@ fn parse_cypherdoc(raw: &str) -> Option<CypherDoc> {
                     })
                     .unwrap_or_default();
 
-                let param_node = child.child_by_field_name("param")?;
+                let Some(param_node) = child.child_by_field_name("param") else {
+                    continue;
+                };
                 let (param_name, required, default) = match param_node.kind() {
                     "required_param" => {
                         let nm = param_node
@@ -734,12 +736,12 @@ fn coerce_map_value(node: tree_sitter::Node, src: &[u8]) -> Result<ParamValue> {
         "boolean_literal" => Ok(ParamValue::Boolean(text == "true")),
         "null_literal" => Ok(ParamValue::Json(serde_json::Value::Null)),
         "string_literal" => {
-            // Strip surrounding single or double quotes
+            // Strip exactly one matching pair of surrounding quotes (single or double).
             let inner = text
-                .trim_start_matches('"')
-                .trim_end_matches('"')
-                .trim_start_matches('\'')
-                .trim_end_matches('\'');
+                .strip_prefix('"')
+                .and_then(|s| s.strip_suffix('"'))
+                .or_else(|| text.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+                .unwrap_or(text);
             Ok(ParamValue::String(inner.to_string()))
         }
         "map_literal" => {
@@ -812,10 +814,10 @@ fn literal_to_json(node: tree_sitter::Node, src: &[u8]) -> Result<serde_json::Va
         "null_literal" => Ok(serde_json::Value::Null),
         "string_literal" => {
             let inner = text
-                .trim_start_matches('"')
-                .trim_end_matches('"')
-                .trim_start_matches('\'')
-                .trim_end_matches('\'');
+                .strip_prefix('"')
+                .and_then(|s| s.strip_suffix('"'))
+                .or_else(|| text.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+                .unwrap_or(text);
             Ok(serde_json::Value::String(inner.to_string()))
         }
         "map_literal" => map_literal_to_json(node, src),
@@ -907,9 +909,12 @@ fn format_cypherdoc_hint(doc: &CypherDoc) -> String {
 
 fn preflight_params(queue: &[StatementEntry], params: &ParamMap) {
     let mut missing = false;
+    // Accumulate all $x refs as we go; reused for the unused-param warning below.
+    let mut all_refs: HashSet<String> = HashSet::new();
 
     for entry in queue {
         let ast_refs = collect_param_refs(&entry.text);
+        all_refs.extend(ast_refs.iter().cloned());
 
         if let Some(doc) = &entry.doc {
             // Cypherdoc-aware: use ParamDecl to classify required vs optional.
@@ -956,11 +961,7 @@ fn preflight_params(queue: &[StatementEntry], params: &ParamMap) {
         std::process::exit(1);
     }
 
-    // Warn about unused params.
-    let all_refs: HashSet<String> = queue
-        .iter()
-        .flat_map(|e| collect_param_refs(&e.text))
-        .collect();
+    // Warn about params provided but not referenced in any statement.
     for key in params.keys() {
         if !all_refs.contains(key.as_str()) {
             eprintln!("Warning: parameter '{key}' is not referenced in any statement");
@@ -1035,8 +1036,8 @@ fn print_list(entries: &[StatementEntry], json: bool) {
 }
 
 /// List all named statements across every .cypher file in cypher_dir (--list with no [QUERY]).
-fn list_library(cypher_dir: &std::path::Path, json: bool) {
-    let mut files: Vec<std::path::PathBuf> = match std::fs::read_dir(cypher_dir) {
+fn list_library(cypher_dir: &Path, json: bool) {
+    let mut files: Vec<PathBuf> = match std::fs::read_dir(cypher_dir) {
         Ok(rd) => rd
             .filter_map(|e| e.ok().map(|e| e.path()))
             .filter(|p| p.extension().map(|e| e == "cypher").unwrap_or(false))
@@ -1056,8 +1057,9 @@ fn list_library(cypher_dir: &std::path::Path, json: bool) {
         let mut all: Vec<ListEntry> = Vec::new();
         for file in &files {
             let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-            if let Ok(entries) = build_queue_file(file) {
-                all.extend(collect_list_entries(&entries, Some(stem)));
+            match build_queue_file(file) {
+                Ok(entries) => all.extend(collect_list_entries(&entries, Some(stem))),
+                Err(e) => eprintln!("Warning: skipping '{}': {e}", file.display()),
             }
         }
         print_list_entries(&all, true);
@@ -1065,18 +1067,21 @@ fn list_library(cypher_dir: &std::path::Path, json: bool) {
         // Group by file, one header per file.
         for file in &files {
             let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-            if let Ok(entries) = build_queue_file(file) {
-                println!("{stem}");
-                let list = collect_list_entries(&entries, None);
-                let col_width = list.iter().map(|e| e.name.len()).max().unwrap_or(0) + 2;
-                for entry in &list {
-                    if entry.description.is_empty() {
-                        println!("  {}", entry.name);
-                    } else {
-                        println!("  {:<col_width$}{}", entry.name, entry.description);
+            match build_queue_file(file) {
+                Ok(entries) => {
+                    println!("{stem}");
+                    let list = collect_list_entries(&entries, None);
+                    let col_width = list.iter().map(|e| e.name.len()).max().unwrap_or(0) + 2;
+                    for entry in &list {
+                        if entry.description.is_empty() {
+                            println!("  {}", entry.name);
+                        } else {
+                            println!("  {:<col_width$}{}", entry.name, entry.description);
+                        }
                     }
+                    println!();
                 }
-                println!();
+                Err(e) => eprintln!("Warning: skipping '{}': {e}", file.display()),
             }
         }
     }

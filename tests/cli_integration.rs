@@ -549,7 +549,6 @@ MATCH (p:Person {{name: $name}}) DETACH DELETE p"#
     // T020: --describe does not produce JSON output (always human-readable)
     #[test]
     fn describe_ignores_json_flag() {
-        use std::io::Write;
         let mut f = NamedTempFile::with_suffix(".cypher").unwrap();
         write!(f, "/** find\n */\nMATCH (n) RETURN n").unwrap();
 
@@ -627,5 +626,170 @@ MATCH (p:Person {{name: $name}}) DETACH DELETE p"#
             .failure()
             .code(1)
             .stderr(contains("mutually exclusive"));
+    }
+
+    // ── --list integration tests ──────────────────────────────────────────────
+
+    // --list on a single file: shows statement names and one-line descriptions
+    #[test]
+    fn list_single_file_shows_names() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("ops.cypher"),
+            "/** create\n * Make a node.\n */\nCREATE (n) RETURN n;\n\
+             /** delete\n * Remove a node.\n */\nMATCH (n) DELETE n",
+        )
+        .unwrap();
+
+        let output = cmd()
+            .args([
+                "query",
+                "--list",
+                dir.path().join("ops.cypher").to_str().unwrap(),
+            ])
+            .assert()
+            .success()
+            .code(0);
+        let out = std::str::from_utf8(&output.get_output().stdout).unwrap();
+        assert!(out.contains("create"), "should list 'create': {out}");
+        assert!(out.contains("delete"), "should list 'delete': {out}");
+        assert!(
+            out.contains("Make a node"),
+            "should show description: {out}"
+        );
+    }
+
+    // --list --json on a single file: produces a JSON array with name and description fields
+    #[test]
+    fn list_single_file_json() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("ops.cypher"),
+            "/** find\n * Locate a node.\n */\nMATCH (n) RETURN n",
+        )
+        .unwrap();
+
+        let output = cmd()
+            .args([
+                "query",
+                "--list",
+                "--json",
+                dir.path().join("ops.cypher").to_str().unwrap(),
+            ])
+            .assert()
+            .success()
+            .code(0);
+        let stdout = output.get_output().stdout.clone();
+        let arr: serde_json::Value = serde_json::from_slice(&stdout).expect("valid JSON array");
+        assert!(arr.is_array(), "should be a JSON array");
+        let first = &arr[0];
+        assert_eq!(first["name"], "find");
+        assert!(
+            first["description"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Locate"),
+            "description should contain 'Locate': {first}"
+        );
+    }
+
+    // --list with no [QUERY]: lists all files in the library directory
+    #[test]
+    fn list_library_wide_shows_all_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("alpha.cypher"),
+            "/** find_alpha */\nMATCH (n:Alpha) RETURN n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("beta.cypher"),
+            "/** find_beta */\nMATCH (n:Beta) RETURN n",
+        )
+        .unwrap();
+
+        let output = cmd()
+            .args([
+                "query",
+                "--list",
+                "--cypher-dir",
+                dir.path().to_str().unwrap(),
+            ])
+            .assert()
+            .success()
+            .code(0);
+        let out = std::str::from_utf8(&output.get_output().stdout).unwrap();
+        assert!(out.contains("alpha"), "should list 'alpha': {out}");
+        assert!(out.contains("beta"), "should list 'beta': {out}");
+        assert!(
+            out.contains("find_alpha"),
+            "should list 'find_alpha': {out}"
+        );
+        assert!(out.contains("find_beta"), "should list 'find_beta': {out}");
+    }
+
+    // --list --json with no [QUERY]: flat JSON array with file/stmt names
+    #[test]
+    fn list_library_wide_json() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("things.cypher"),
+            "/** create_thing\n * Make a thing.\n */\nCREATE (n:Thing) RETURN n",
+        )
+        .unwrap();
+
+        let output = cmd()
+            .args([
+                "query",
+                "--list",
+                "--json",
+                "--cypher-dir",
+                dir.path().to_str().unwrap(),
+            ])
+            .assert()
+            .success()
+            .code(0);
+        let stdout = output.get_output().stdout.clone();
+        let arr: serde_json::Value = serde_json::from_slice(&stdout).expect("valid JSON array");
+        assert!(arr.is_array());
+        let first = &arr[0];
+        // Library-wide JSON uses "file/stmt" form
+        assert_eq!(first["name"], "things/create_thing");
+        assert!(
+            first["description"].as_str().unwrap_or("").contains("Make"),
+            "description should contain 'Make': {first}"
+        );
+    }
+
+    // --list on an empty directory: exits 0 with no output
+    #[test]
+    fn list_empty_library_exits_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        cmd()
+            .args([
+                "query",
+                "--list",
+                "--cypher-dir",
+                dir.path().to_str().unwrap(),
+            ])
+            .assert()
+            .success()
+            .code(0);
+    }
+
+    // --list on a missing directory: exits 1 with an error
+    #[test]
+    fn list_missing_library_exits_one() {
+        cmd()
+            .args([
+                "query",
+                "--list",
+                "--cypher-dir",
+                "/tmp/nonexistent_relate_dir",
+            ])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("not found"));
     }
 }
