@@ -147,10 +147,11 @@ fn preflight_lint(queue: &[StatementEntry]) {
 
     for entry in queue {
         let opts = cypher_data::lint::LintOptions { strict: false };
-        let diags: Vec<gram_diagnostics::Diagnostic> = cypher_data::lint::lint_source(&entry.text, &opts)
-            .into_iter()
-            .map(from_cypher_diagnostic)
-            .collect();
+        let diags: Vec<gram_diagnostics::Diagnostic> =
+            cypher_data::lint::lint_source(&entry.text, &opts)
+                .into_iter()
+                .map(from_cypher_diagnostic)
+                .collect();
 
         for diag in &diags {
             if matches!(diag.severity, Severity::Error) {
@@ -161,8 +162,7 @@ fn preflight_lint(queue: &[StatementEntry]) {
             let start = &diag.range.start;
             let end = &diag.range.end;
             let start_off = to_byte_offset(&entry.text, start.line, start.character);
-            let end_off =
-                to_byte_offset(&entry.text, end.line, end.character).max(start_off + 1);
+            let end_off = to_byte_offset(&entry.text, end.line, end.character).max(start_off + 1);
 
             let kind = match diag.severity {
                 Severity::Error => ariadne::ReportKind::Error,
@@ -235,7 +235,10 @@ fn find_write_clause(node: tree_sitter::Node) -> Option<String> {
 
 fn classify_statement(text: &str) -> Classification {
     let mut parser = tree_sitter::Parser::new();
-    if parser.set_language(&tree_sitter::Language::from(tree_sitter_cypher::LANGUAGE)).is_err() {
+    if parser
+        .set_language(&tree_sitter::Language::from(tree_sitter_cypher::LANGUAGE))
+        .is_err()
+    {
         return Classification::Read;
     }
     let tree = match parser.parse(text, None) {
@@ -257,10 +260,7 @@ fn preflight_write(queue: &[StatementEntry], allow_write: bool) {
         if let Classification::Write { first_write_kind } = classify_statement(&entry.text) {
             if !allow_write {
                 eprintln!("Error: write operation requires --write flag");
-                eprintln!(
-                    "  Statement: {}",
-                    entry.text.lines().next().unwrap_or("")
-                );
+                eprintln!("  Statement: {}", entry.text.lines().next().unwrap_or(""));
                 eprintln!("  Source: {}", entry.source);
                 eprintln!("  Clause: {first_write_kind}");
                 eprintln!();
@@ -342,7 +342,10 @@ fn collect_param_refs_recursive(
 
 fn collect_param_refs(text: &str) -> HashSet<String> {
     let mut parser = tree_sitter::Parser::new();
-    if parser.set_language(&tree_sitter::Language::from(tree_sitter_cypher::LANGUAGE)).is_err() {
+    if parser
+        .set_language(&tree_sitter::Language::from(tree_sitter_cypher::LANGUAGE))
+        .is_err()
+    {
         return HashSet::new();
     }
     let tree = match parser.parse(text, None) {
@@ -716,7 +719,10 @@ mod tests {
 
     #[test]
     fn test_classify_read() {
-        assert!(matches!(classify_statement("MATCH (n) RETURN n"), Classification::Read));
+        assert!(matches!(
+            classify_statement("MATCH (n) RETURN n"),
+            Classification::Read
+        ));
     }
 
     #[test]

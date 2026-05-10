@@ -7,9 +7,7 @@ pub mod write;
 
 /// Convert a cypher-data diagnostic to the shared gram_diagnostics type.
 /// Both lint.rs and query.rs use this; it lives here to avoid duplication.
-pub fn from_cypher_diagnostic(
-    d: cypher_data::types::Diagnostic,
-) -> gram_diagnostics::Diagnostic {
+pub fn from_cypher_diagnostic(d: cypher_data::types::Diagnostic) -> gram_diagnostics::Diagnostic {
     use gram_diagnostics::Severity;
     gram_diagnostics::Diagnostic {
         severity: match d.severity {

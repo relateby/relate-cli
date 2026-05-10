@@ -343,7 +343,13 @@ mod query {
     #[test]
     fn write_without_flag_exits_one_before_connecting() {
         cmd()
-            .args(["query", "--uri", "bolt://127.0.0.1:1", "-e", "CREATE (n:Test)"])
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                "-e",
+                "CREATE (n:Test)",
+            ])
             .assert()
             .failure()
             .code(1)
@@ -358,7 +364,12 @@ mod query {
         let mut f = NamedTempFile::with_suffix(".cypher").unwrap();
         writeln!(f, "MATCH (n) RETURN n").unwrap();
         cmd()
-            .args(["query", "--uri", "bolt://127.0.0.1:1", f.path().to_str().unwrap()])
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                f.path().to_str().unwrap(),
+            ])
             .assert()
             .failure()
             .code(2); // preflight passes; runtime fails on unreachable URI
@@ -371,7 +382,12 @@ mod query {
         writeln!(f, "MATCH (n) RETURN n").unwrap();
         writeln!(f, "THIS IS NOT CYPHER !!!").unwrap();
         cmd()
-            .args(["query", "--uri", "bolt://127.0.0.1:1", f.path().to_str().unwrap()])
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                f.path().to_str().unwrap(),
+            ])
             .assert()
             .failure()
             .code(1); // lint preflight catches the second statement
@@ -382,7 +398,12 @@ mod query {
     fn empty_cypher_file_exits_one() {
         let f = NamedTempFile::with_suffix(".cypher").unwrap();
         cmd()
-            .args(["query", "--uri", "bolt://127.0.0.1:1", f.path().to_str().unwrap()])
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                f.path().to_str().unwrap(),
+            ])
             .assert()
             .failure()
             .code(1)
@@ -393,8 +414,13 @@ mod query {
     #[test]
     fn missing_param_exits_one() {
         cmd()
-            .args(["query", "--uri", "bolt://127.0.0.1:1",
-                   "-e", "MATCH (n {name: $name}) RETURN n"])
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                "-e",
+                "MATCH (n {name: $name}) RETURN n",
+            ])
             .assert()
             .failure()
             .code(1)
@@ -405,8 +431,14 @@ mod query {
     #[test]
     fn json_flag_with_lint_error_exits_one() {
         cmd()
-            .args(["query", "--uri", "bolt://127.0.0.1:1", "--json",
-                   "-e", "NOT VALID CYPHER"])
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                "--json",
+                "-e",
+                "NOT VALID CYPHER",
+            ])
             .assert()
             .failure()
             .code(1);
@@ -417,8 +449,14 @@ mod query {
     #[test]
     fn json_flag_preflight_passes_for_valid_read() {
         cmd()
-            .args(["query", "--uri", "bolt://127.0.0.1:1", "--json",
-                   "-e", "MATCH (n) RETURN count(n) AS total"])
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                "--json",
+                "-e",
+                "MATCH (n) RETURN count(n) AS total",
+            ])
             .assert()
             .failure()
             .code(2); // preflight passes; runtime fails on unreachable URI
@@ -429,7 +467,12 @@ mod query {
     fn mutual_exclusion_exits_one() {
         let f = NamedTempFile::with_suffix(".cypher").unwrap();
         cmd()
-            .args(["query", f.path().to_str().unwrap(), "-e", "MATCH (n) RETURN n"])
+            .args([
+                "query",
+                f.path().to_str().unwrap(),
+                "-e",
+                "MATCH (n) RETURN n",
+            ])
             .assert()
             .failure()
             .code(1)
