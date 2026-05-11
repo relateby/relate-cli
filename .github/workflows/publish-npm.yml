@@ -1,12 +1,15 @@
 name: Publish to npm
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
 
 jobs:
   publish:
     name: Publish npm packages
+    # Only run when the Release workflow succeeded and was triggered by a version tag
+    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -14,6 +17,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -22,11 +27,15 @@ jobs:
 
       - name: Determine version and dist-tag
         id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
-          VERSION="${VERSION#v}"
+          TAG="${{ github.event.workflow_run.head_branch }}"
+          VERSION="${TAG#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          if [[ "${{ github.event.release.prerelease }}" == "true" ]]; then
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          PRERELEASE=$(gh release view "$TAG" --repo "${{ github.repository }}" --json isPrerelease --jq '.isPrerelease')
+          if [[ "$PRERELEASE" == "true" ]]; then
             echo "npm_tag=next" >> "$GITHUB_OUTPUT"
           else
             echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
@@ -37,7 +46,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p /tmp/relate-archives
-          gh release download "${{ github.event.release.tag_name }}" \
+          gh release download "${{ steps.meta.outputs.tag }}" \
             --dir /tmp/relate-archives \
             --pattern "relate-*.tar.gz" \
             --pattern "relate-*.zip"
