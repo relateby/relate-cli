@@ -87,7 +87,7 @@ jobs:
 
             if [[ "$os" == "win32" ]]; then
               ARCHIVE="relate-${target}.zip"
-              unzip -j "/tmp/relate-archives/${ARCHIVE}" "*/relate.exe" -d "${PKG_DIR}/bin/"
+              unzip -j "/tmp/relate-archives/${ARCHIVE}" "relate.exe" -d "${PKG_DIR}/bin/"
               EXT=".exe"
             else
               ARCHIVE="relate-${target}.tar.xz"
