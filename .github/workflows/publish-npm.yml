@@ -104,7 +104,11 @@ jobs:
               -e "s|%%EXT%%|${EXT}|g" \
               "${SCRIPT_DIR}/cli-platform/package.json.tmpl" > "${PKG_DIR}/package.json"
 
-            npm publish "${PKG_DIR}" --tag "${NPM_TAG}" --access public --provenance
+            if npm view "${npm_name}@${VERSION}" version &>/dev/null; then
+              echo "  already published, skipping"
+            else
+              npm publish "${PKG_DIR}" --tag "${NPM_TAG}" --access public --provenance
+            fi
 
           done < "${SCRIPT_DIR}/platforms.tsv"
 
@@ -125,4 +129,8 @@ jobs:
             -e "s|%%VERSION%%|${VERSION}|g" \
             distribution/npm/cli/package.json.tmpl > "${WORK_DIR}/package.json"
 
-          npm publish "${WORK_DIR}" --tag "${NPM_TAG}" --access public --provenance
+          if npm view "@relateby/cli@${VERSION}" version &>/dev/null; then
+            echo "@relateby/cli@${VERSION} already published, skipping"
+          else
+            npm publish "${WORK_DIR}" --tag "${NPM_TAG}" --access public --provenance
+          fi
