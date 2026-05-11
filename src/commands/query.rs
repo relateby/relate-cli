@@ -78,7 +78,7 @@ struct CypherDoc {
 
 // ── T009: ParamValue / ParamMap ───────────────────────────────────────────────
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum ParamValue {
     Integer(i64),
     Float(f64),
@@ -108,6 +108,9 @@ struct QueryResult {
     rows: Vec<Vec<serde_json::Value>>,
     summary: QuerySummary,
     is_write: bool,
+    /// 0-based row index when this result was produced by an --apply iteration;
+    /// None for single-statement (M1/M2) invocations.
+    row: Option<usize>,
 }
 
 // ── T027: Classification ──────────────────────────────────────────────────────
@@ -1181,6 +1184,596 @@ fn print_describe(entries: &[StatementEntry]) {
     }
 }
 
+// ── Milestone 3: Batch Execution ─────────────────────────────────────────────
+//
+// `--apply <FILE>` runs the queue once per row of a CSV / JSON-array / JSONL
+// file with explicit transaction batching. The new types live here:
+//
+//   BatchMode            — Batched(N) | Atomic (with mutex validation)
+//   RowReader (trait)    — abstracts the three data file formats
+//   CsvRowReader         — streaming CSV reader with header support
+//   JsonArrayRowReader   — fully-parsed JSON array (small data sets only)
+//   JsonlRowReader       — streaming line-by-line JSON reader
+//   PeekableRowReader    — wraps the trait object; caches the first row so
+//                          preflight can validate against it before connecting
+//   open_row_reader      — factory dispatching on file extension
+//   execute_queue_apply  — async apply-mode dispatcher (US3 fills the body)
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BatchMode {
+    /// Commit every N rows (N defaults to 1000).
+    Batched(usize),
+    /// Wrap all rows in a single transaction.
+    Atomic,
+}
+
+impl BatchMode {
+    /// Resolve a `BatchMode` from CLI args, enforcing the three mutex rules:
+    /// `--batch` ⊥ `--atomic`, `--batch 0` rejected, `--batch`/`--atomic`
+    /// require `--apply`. Default (neither flag) is `Batched(1000)`.
+    fn from_args(args: &QueryArgs) -> Result<Self> {
+        if args.batch.is_some() && args.atomic {
+            return Err(anyhow!("--batch and --atomic are mutually exclusive"));
+        }
+        if args.apply.is_none() && (args.batch.is_some() || args.atomic) {
+            return Err(anyhow!("--batch/--atomic require --apply"));
+        }
+        if let Some(n) = args.batch {
+            if n == 0 {
+                return Err(anyhow!("--batch must be at least 1"));
+            }
+            return Ok(BatchMode::Batched(n));
+        }
+        if args.atomic {
+            return Ok(BatchMode::Atomic);
+        }
+        Ok(BatchMode::Batched(1000))
+    }
+}
+
+/// Coerce a CSV cell (or any raw string) into a `ParamValue` using the same
+/// rules as the `--param NAME=VALUE` flag: integer / float / boolean / string.
+/// Used by `CsvRowReader::next_row` so coercion is identical to the M1/M2 flag.
+fn coerce_param_value(raw: &str) -> ParamValue {
+    if let Ok(i) = raw.parse::<i64>() {
+        ParamValue::Integer(i)
+    } else if let Ok(f) = raw.parse::<f64>() {
+        ParamValue::Float(f)
+    } else if raw == "true" {
+        ParamValue::Boolean(true)
+    } else if raw == "false" {
+        ParamValue::Boolean(false)
+    } else {
+        ParamValue::String(raw.to_string())
+    }
+}
+
+/// Convert a JSON value into a `ParamValue`, preserving scalar types and
+/// wrapping nested objects / arrays / null as `ParamValue::Json`. Used by
+/// the JSON array and JSONL readers so types are not coerced through strings.
+fn param_value_from_json(v: serde_json::Value) -> ParamValue {
+    match v {
+        serde_json::Value::String(s) => ParamValue::String(s),
+        serde_json::Value::Bool(b) => ParamValue::Boolean(b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                ParamValue::Integer(i)
+            } else if let Some(f) = n.as_f64() {
+                ParamValue::Float(f)
+            } else {
+                ParamValue::Json(serde_json::Value::Number(n))
+            }
+        }
+        other => ParamValue::Json(other),
+    }
+}
+
+/// Abstraction over CSV / JSON-array / JSONL data files for `--apply`.
+trait RowReader {
+    /// Yields the next row as a parameter map, or None at EOF. A returned
+    /// `Err` aborts the run; the caller surfaces the row/line index.
+    fn next_row(&mut self) -> Option<Result<ParamMap>>;
+
+    /// Total row count if known up front (JSON array only). Used to render
+    /// progress as `[N/M]` vs. `[N/?]`.
+    fn total_hint(&self) -> Option<usize> {
+        None
+    }
+}
+
+struct CsvRowReader {
+    headers: Vec<String>,
+    reader: csv::Reader<std::fs::File>,
+    row_index: usize,
+}
+
+impl CsvRowReader {
+    fn open(path: &Path) -> Result<Self> {
+        let file = std::fs::File::open(path)
+            .map_err(|e| anyhow!("cannot open CSV file '{}': {e}", path.display()))?;
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(file);
+
+        let raw_headers = reader
+            .headers()
+            .map_err(|e| anyhow!("cannot read CSV headers from '{}': {e}", path.display()))?
+            .clone();
+        let headers: Vec<String> = raw_headers.iter().map(|h| h.trim().to_string()).collect();
+
+        // Validate: every header must be non-empty.
+        for (i, h) in headers.iter().enumerate() {
+            if h.is_empty() {
+                return Err(anyhow!(
+                    "invalid CSV header in '{}'\n  Empty column at position {}\n  Hint: every column must have a non-empty header name",
+                    path.display(),
+                    i + 1
+                ));
+            }
+        }
+        // Validate: no duplicate header names.
+        let mut seen: HashSet<&str> = HashSet::new();
+        for h in &headers {
+            if !seen.insert(h.as_str()) {
+                return Err(anyhow!(
+                    "invalid CSV header in '{}'\n  Duplicate column name '{}'\n  Hint: each column must have a unique header name",
+                    path.display(),
+                    h
+                ));
+            }
+        }
+
+        Ok(Self {
+            headers,
+            reader,
+            row_index: 0,
+        })
+    }
+}
+
+impl RowReader for CsvRowReader {
+    fn next_row(&mut self) -> Option<Result<ParamMap>> {
+        let mut record = csv::StringRecord::new();
+        match self.reader.read_record(&mut record) {
+            Ok(true) => {
+                self.row_index += 1;
+                let mut map = ParamMap::new();
+                for (i, header) in self.headers.iter().enumerate() {
+                    let cell = record.get(i).unwrap_or("");
+                    map.insert(header.clone(), coerce_param_value(cell));
+                }
+                Some(Ok(map))
+            }
+            Ok(false) => None,
+            Err(e) => Some(Err(anyhow!(
+                "CSV parse error at row {}: {e}",
+                self.row_index + 1
+            ))),
+        }
+    }
+}
+
+struct JsonArrayRowReader {
+    iter: std::vec::IntoIter<serde_json::Value>,
+    total: usize,
+}
+
+impl JsonArrayRowReader {
+    fn open(path: &Path) -> Result<Self> {
+        let file = std::fs::File::open(path)
+            .map_err(|e| anyhow!("cannot open JSON file '{}': {e}", path.display()))?;
+        let value: serde_json::Value = serde_json::from_reader(std::io::BufReader::new(file))
+            .map_err(|e| anyhow!("cannot parse JSON file '{}': {e}", path.display()))?;
+        let arr = match value {
+            serde_json::Value::Array(a) => a,
+            _ => {
+                return Err(anyhow!(
+                    "--apply JSON file must be a top-level array of objects\n  Got: {} at {}\n  Hint: wrap the object in [ ... ] or use a JSONL file",
+                    json_top_level_kind(&value),
+                    path.display()
+                ))
+            }
+        };
+        // Validate every element is an object (FR-016).
+        for (i, elem) in arr.iter().enumerate() {
+            if !elem.is_object() {
+                return Err(anyhow!(
+                    "--apply JSON array element {} must be an object\n  Got: {} at {}",
+                    i,
+                    json_top_level_kind(elem),
+                    path.display()
+                ));
+            }
+        }
+        let total = arr.len();
+        Ok(Self {
+            iter: arr.into_iter(),
+            total,
+        })
+    }
+}
+
+fn json_top_level_kind(v: &serde_json::Value) -> &'static str {
+    match v {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "boolean",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
+    }
+}
+
+impl RowReader for JsonArrayRowReader {
+    fn next_row(&mut self) -> Option<Result<ParamMap>> {
+        let elem = self.iter.next()?;
+        let obj = match elem {
+            serde_json::Value::Object(o) => o,
+            _ => {
+                // Validated up-front in open(); reachable only if iter was modified.
+                return Some(Err(anyhow!("JSON array element is not an object")));
+            }
+        };
+        let map: ParamMap = obj
+            .into_iter()
+            .map(|(k, v)| (k, param_value_from_json(v)))
+            .collect();
+        Some(Ok(map))
+    }
+
+    fn total_hint(&self) -> Option<usize> {
+        Some(self.total)
+    }
+}
+
+struct JsonlRowReader {
+    lines: std::io::Lines<std::io::BufReader<std::fs::File>>,
+    line_number: usize,
+}
+
+impl JsonlRowReader {
+    fn open(path: &Path) -> Result<Self> {
+        let file = std::fs::File::open(path)
+            .map_err(|e| anyhow!("cannot open JSONL file '{}': {e}", path.display()))?;
+        use std::io::BufRead;
+        let lines = std::io::BufReader::new(file).lines();
+        Ok(Self {
+            lines,
+            line_number: 0,
+        })
+    }
+}
+
+impl RowReader for JsonlRowReader {
+    fn next_row(&mut self) -> Option<Result<ParamMap>> {
+        loop {
+            let line = self.lines.next()?;
+            self.line_number += 1;
+            let raw = match line {
+                Ok(s) => s,
+                Err(e) => {
+                    return Some(Err(anyhow!(
+                        "I/O error reading JSONL line {}: {e}",
+                        self.line_number
+                    )))
+                }
+            };
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let value: serde_json::Value = match serde_json::from_str(trimmed) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Some(Err(anyhow!(
+                        "invalid JSON on line {} of JSONL file\n  Underlying: {e}",
+                        self.line_number
+                    )))
+                }
+            };
+            let obj = match value {
+                serde_json::Value::Object(o) => o,
+                other => {
+                    return Some(Err(anyhow!(
+                        "JSONL line {} is not a JSON object (got {})",
+                        self.line_number,
+                        json_top_level_kind(&other)
+                    )))
+                }
+            };
+            let map: ParamMap = obj
+                .into_iter()
+                .map(|(k, v)| (k, param_value_from_json(v)))
+                .collect();
+            return Some(Ok(map));
+        }
+    }
+}
+
+/// Factory: open a `RowReader` by file extension.
+fn open_row_reader(path: &Path) -> Result<Box<dyn RowReader>> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    match ext.as_deref() {
+        Some("csv") => Ok(Box::new(CsvRowReader::open(path)?)),
+        Some("json") => Ok(Box::new(JsonArrayRowReader::open(path)?)),
+        Some("jsonl") => Ok(Box::new(JsonlRowReader::open(path)?)),
+        _ => Err(anyhow!(
+            "--apply requires a .csv, .json, or .jsonl file\n  Got: {}",
+            path.display()
+        )),
+    }
+}
+
+/// Wraps a `RowReader` and caches the first row so preflight can inspect it
+/// before any Bolt connection opens. The apply loop sees the cached row as
+/// iteration 0, then delegates to the inner reader.
+struct PeekableRowReader {
+    inner: Box<dyn RowReader>,
+    first: Option<ParamMap>,
+    consumed_first: bool,
+    total_hint: Option<usize>,
+}
+
+impl PeekableRowReader {
+    fn open(path: &Path) -> Result<Self> {
+        let mut inner = open_row_reader(path)?;
+        let total_hint = inner.total_hint();
+        let first = match inner.next_row() {
+            Some(Ok(map)) => Some(map),
+            Some(Err(e)) => return Err(e),
+            None => None,
+        };
+        Ok(Self {
+            inner,
+            first,
+            consumed_first: false,
+            total_hint,
+        })
+    }
+
+    fn first_row(&self) -> Option<&ParamMap> {
+        self.first.as_ref()
+    }
+
+    fn next_row(&mut self) -> Option<Result<ParamMap>> {
+        if !self.consumed_first {
+            self.consumed_first = true;
+            if let Some(first) = self.first.take() {
+                return Some(Ok(first));
+            }
+            return None;
+        }
+        self.inner.next_row()
+    }
+
+    fn total_hint(&self) -> Option<usize> {
+        self.total_hint
+    }
+}
+
+/// Pluralise: "1 row" vs "5 rows".
+fn pluralize(n: usize, singular: &str, plural: &str) -> String {
+    if n == 1 {
+        format!("1 {singular}")
+    } else {
+        format!("{n} {plural}")
+    }
+}
+
+/// Decide whether to emit progress for this row index. Throttles per Decision
+/// 14's "every-row up to 100, then every total/100 (or every 100 if unknown)".
+fn should_emit_progress(row_index_1based: usize, total: Option<usize>) -> bool {
+    let interval = match total {
+        Some(t) if t <= 100 => 1,
+        Some(t) => (t / 100).max(1),
+        None if row_index_1based <= 100 => 1,
+        None => 100,
+    };
+    row_index_1based % interval == 0
+}
+
+/// Apply-mode dispatcher (Milestone 3 — US3 + US4 + US5).
+async fn execute_queue_apply(
+    queue: &[StatementEntry],
+    constants: &ParamMap,
+    mut reader: PeekableRowReader,
+    mode: BatchMode,
+    neo4j: &Neo4jArgs,
+    json: bool,
+) -> Result<Vec<QueryResult>> {
+    let password = neo4j.require_password()?;
+    let graph = match Graph::new(&neo4j.uri, &neo4j.user, password) {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("Error: failed to connect to Neo4j: {e}");
+            std::process::exit(2);
+        }
+    };
+
+    let total_hint = reader.total_hint();
+    let mut results: Vec<QueryResult> = Vec::new();
+    let mut row_index: usize = 0;
+    let mut rows_in_batch: usize = 0;
+    let mut batches_committed: usize = 0;
+    let mut total_rows_committed: usize = 0;
+    let mut tx: Option<neo4rs::Txn> = None;
+
+    loop {
+        let row_params = match reader.next_row() {
+            Some(Ok(map)) => map,
+            Some(Err(e)) => {
+                if let Some(t) = tx.take() {
+                    let _ = t.rollback().await;
+                }
+                eprintln!("Error reading row {}: {e}", row_index + 1);
+                std::process::exit(2);
+            }
+            None => break,
+        };
+
+        // Open a transaction if needed (per BatchMode).
+        if tx.is_none() {
+            match graph.start_txn().await {
+                Ok(t) => tx = Some(t),
+                Err(e) => {
+                    eprintln!("Error: failed to start transaction: {e}");
+                    std::process::exit(2);
+                }
+            }
+        }
+
+        // Effective param set: row-derived overlaid by constants (FR-005).
+        let mut effective: ParamMap = row_params;
+        for (k, v) in constants {
+            effective.insert(k.clone(), v.clone());
+        }
+
+        // Run every statement in the queue for this row, inside the active tx.
+        let tx_ref = tx.as_mut().expect("tx was just opened");
+        let mut row_failed = false;
+        let mut failing_source: Option<StatementSource> = None;
+        let mut failing_error: Option<String> = None;
+
+        for entry in queue {
+            let is_write = matches!(
+                classify_statement(&entry.text),
+                Classification::Write { .. }
+            );
+            let q = bind_params(neo4rs::query(&entry.text), &effective);
+
+            match tx_ref.run(q).await {
+                Ok(_) => {
+                    results.push(QueryResult {
+                        source: entry.source.clone(),
+                        columns: Vec::new(),
+                        rows: Vec::new(),
+                        summary: QuerySummary::default(),
+                        is_write,
+                        row: Some(row_index),
+                    });
+                }
+                Err(e) => {
+                    row_failed = true;
+                    failing_source = Some(entry.source.clone());
+                    failing_error = Some(e.to_string());
+                    break;
+                }
+            }
+        }
+
+        if row_failed {
+            // Roll back the current transaction.
+            if let Some(t) = tx.take() {
+                let _ = t.rollback().await;
+            }
+            // Render the failure per the contract.
+            let underlying = failing_error.unwrap_or_else(|| "unknown error".to_string());
+            let src = failing_source
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "<unknown>".to_string());
+            eprintln!("Error on row {}: query execution failed", row_index + 1);
+            eprintln!("  Source: {src}");
+            match mode {
+                BatchMode::Atomic => {
+                    eprintln!("  Transaction rolled back. 0 rows committed.");
+                }
+                BatchMode::Batched(_n) => {
+                    let rolled_back = rows_in_batch + 1; // includes the failing row
+                    eprintln!(
+                        "  {} ({}), {} in current batch rolled back.",
+                        pluralize(total_rows_committed, "row committed", "rows committed"),
+                        pluralize(batches_committed, "batch", "batches"),
+                        pluralize(rolled_back, "row", "rows"),
+                    );
+                }
+            }
+            eprintln!("  Underlying: {underlying}");
+
+            // Flush partial JSON output so consumers can still parse it (US5 #2).
+            if json {
+                print_json(&results);
+            }
+            std::process::exit(2);
+        }
+
+        // Row succeeded.
+        let row_index_1based = row_index + 1;
+        rows_in_batch += 1;
+
+        // Maybe commit (Batched mode only).
+        if let BatchMode::Batched(n) = mode {
+            if rows_in_batch >= n {
+                let to_commit = tx.take().expect("tx was open while batching");
+                if let Err(e) = to_commit.commit().await {
+                    eprintln!("Error: failed to commit batch: {e}");
+                    std::process::exit(2);
+                }
+                batches_committed += 1;
+                total_rows_committed += rows_in_batch;
+                rows_in_batch = 0;
+                if should_emit_progress(row_index_1based, total_hint) {
+                    eprintln!(
+                        "[{}/{}] applied row {} (batch {} committed)",
+                        row_index_1based,
+                        total_hint
+                            .map(|t| t.to_string())
+                            .unwrap_or_else(|| "?".into()),
+                        row_index_1based,
+                        batches_committed,
+                    );
+                }
+            } else if should_emit_progress(row_index_1based, total_hint) {
+                eprintln!(
+                    "[{}/{}] applied row {} (batch {}: {}/{})",
+                    row_index_1based,
+                    total_hint
+                        .map(|t| t.to_string())
+                        .unwrap_or_else(|| "?".into()),
+                    row_index_1based,
+                    batches_committed + 1,
+                    rows_in_batch,
+                    n,
+                );
+            }
+        } else if should_emit_progress(row_index_1based, total_hint) {
+            eprintln!(
+                "[{}/{}] applied row {} (atomic — 1 transaction)",
+                row_index_1based,
+                total_hint
+                    .map(|t| t.to_string())
+                    .unwrap_or_else(|| "?".into()),
+                row_index_1based,
+            );
+        }
+
+        row_index += 1;
+    }
+
+    // End-of-input: commit any open transaction.
+    if let Some(t) = tx.take() {
+        if let Err(e) = t.commit().await {
+            eprintln!("Error: failed to commit final transaction: {e}");
+            std::process::exit(2);
+        }
+        match mode {
+            BatchMode::Atomic => {
+                // Single atomic commit — no batch counters to advance.
+            }
+            BatchMode::Batched(_) => {
+                batches_committed += 1;
+                total_rows_committed += rows_in_batch;
+            }
+        }
+    }
+
+    let _ = total_rows_committed; // counters used only on failure paths
+    let _ = batches_committed;
+    Ok(results)
+}
+
 // ── T013: Execute queue ───────────────────────────────────────────────────────
 
 fn bind_params(mut q: neo4rs::Query, params: &ParamMap) -> neo4rs::Query {
@@ -1286,6 +1879,7 @@ async fn execute_queue(
             rows,
             summary: QuerySummary::default(),
             is_write,
+            row: None,
         });
     }
 
@@ -1381,6 +1975,9 @@ struct JsonSummary {
 
 #[derive(serde::Serialize)]
 struct JsonResult {
+    /// Per-row index from --apply; omitted from JSON when None (M1/M2 schema preserved).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    row: Option<usize>,
     source: String,
     is_write: bool,
     columns: Vec<String>,
@@ -1392,6 +1989,7 @@ fn print_json(results: &[QueryResult]) {
     let output: Vec<JsonResult> = results
         .iter()
         .map(|r| JsonResult {
+            row: r.row,
             source: r.source.to_string(),
             is_write: r.is_write,
             columns: r.columns.clone(),
@@ -1454,6 +2052,22 @@ pub async fn run(mut args: QueryArgs, neo4j: Neo4jArgs) -> Result<()> {
         std::process::exit(1);
     }
 
+    // Mutual exclusion: --apply and [PARAMS] are mutually exclusive
+    if args.apply.is_some() && args.params_map.is_some() {
+        eprintln!("Error: --apply and [PARAMS] are mutually exclusive");
+        eprintln!("       per-row data comes from --apply; use --param for constants");
+        std::process::exit(1);
+    }
+
+    // Resolve batch mode (also enforces --batch ⊥ --atomic and the "requires --apply" rule).
+    let batch_mode = match BatchMode::from_args(&args) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
+
     // --list with no [QUERY]: enumerate the whole library and exit
     if args.list && args.query.is_none() && args.expr.is_empty() {
         list_library(&args.cypher_dir, args.json);
@@ -1494,19 +2108,97 @@ pub async fn run(mut args: QueryArgs, neo4j: Neo4jArgs) -> Result<()> {
     preflight_lint(&queue);
     preflight_write(&queue, args.write);
 
-    let params = match build_param_map(&args) {
+    let constants = match build_param_map(&args) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("Error: {e}");
             std::process::exit(1);
         }
     };
-    preflight_params(&queue, &params);
 
-    // Execute
-    let results = execute_queue(&queue, &params, &neo4j).await?;
+    // ── Apply path (Milestone 3) ─────────────────────────────────────────────
+    if let Some(apply_path) = args.apply.clone() {
+        let reader = match PeekableRowReader::open(&apply_path) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        };
 
-    // Output
+        // Synthesise the first-row parameter map for preflight Stage 3.
+        // If the file is empty, preflight against just the constants.
+        let preflight_params_map = match reader.first_row() {
+            Some(first) => {
+                let mut merged: ParamMap = first.clone();
+                for (k, v) in &constants {
+                    merged.insert(k.clone(), v.clone());
+                }
+                merged
+            }
+            None => {
+                // Empty file: preflight against just constants. If the queue
+                // has required params not in constants, that's the FR-017
+                // "no input rows found" error.
+                let mut required_missing = false;
+                for entry in &queue {
+                    if let Some(doc) = &entry.doc {
+                        for decl in &doc.params {
+                            if decl.required && !constants.contains_key(&decl.name) {
+                                required_missing = true;
+                            }
+                        }
+                    } else {
+                        for name in collect_param_refs(&entry.text) {
+                            if !constants.contains_key(name.as_str()) {
+                                required_missing = true;
+                            }
+                        }
+                    }
+                }
+                if required_missing {
+                    eprintln!(
+                        "Error: no input rows found in '{}'\n  Hint: the query has required parameters but the data file contains no rows.",
+                        apply_path.display()
+                    );
+                    std::process::exit(1);
+                }
+                return Ok(());
+            }
+        };
+        preflight_params(&queue, &preflight_params_map);
+
+        let results =
+            execute_queue_apply(&queue, &constants, reader, batch_mode, &neo4j, args.json).await?;
+
+        if args.json {
+            print_json(&results);
+        } else {
+            // Final summary — count is the number of (statement × row) results;
+            // the row count is results.len() / queue.len() when queue is non-empty.
+            let row_count = if queue.is_empty() {
+                0
+            } else {
+                results.len() / queue.len()
+            };
+            match batch_mode {
+                BatchMode::Atomic => {
+                    println!("{row_count} row(s) applied in 1 atomic transaction.");
+                }
+                BatchMode::Batched(n) => {
+                    let batches = row_count.div_ceil(n.max(1)).max(1);
+                    println!("{row_count} row(s) applied across {batches} batch(es).");
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    // ── Single-statement path (M1 / M2) ──────────────────────────────────────
+    preflight_params(&queue, &constants);
+
+    let results = execute_queue(&queue, &constants, &neo4j).await?;
+
     if args.json {
         print_json(&results);
     } else {
@@ -1801,5 +2493,138 @@ mod tests {
         } else {
             panic!("expected BareName");
         }
+    }
+
+    // ── Milestone 3 tests ────────────────────────────────────────────────────
+
+    fn args_for_test() -> QueryArgs {
+        QueryArgs {
+            query: None,
+            params_map: None,
+            expr: vec![],
+            param: vec![],
+            params: None,
+            write: false,
+            list: false,
+            describe: false,
+            cypher_dir: PathBuf::from("./cypher/"),
+            apply: None,
+            batch: None,
+            atomic: false,
+            json: false,
+        }
+    }
+
+    #[test]
+    fn test_batch_mode_default_is_batched_1000() {
+        let mut args = args_for_test();
+        args.apply = Some(PathBuf::from("data.csv"));
+        let mode = BatchMode::from_args(&args).unwrap();
+        assert_eq!(mode, BatchMode::Batched(1000));
+    }
+
+    #[test]
+    fn test_batch_mode_accepts_explicit_batch_size() {
+        let mut args = args_for_test();
+        args.apply = Some(PathBuf::from("data.csv"));
+        args.batch = Some(500);
+        let mode = BatchMode::from_args(&args).unwrap();
+        assert_eq!(mode, BatchMode::Batched(500));
+    }
+
+    #[test]
+    fn test_batch_mode_atomic() {
+        let mut args = args_for_test();
+        args.apply = Some(PathBuf::from("data.csv"));
+        args.atomic = true;
+        let mode = BatchMode::from_args(&args).unwrap();
+        assert_eq!(mode, BatchMode::Atomic);
+    }
+
+    #[test]
+    fn test_batch_mode_rejects_batch_zero() {
+        let mut args = args_for_test();
+        args.apply = Some(PathBuf::from("data.csv"));
+        args.batch = Some(0);
+        let err = BatchMode::from_args(&args).unwrap_err();
+        assert!(err.to_string().contains("at least 1"));
+    }
+
+    #[test]
+    fn test_batch_mode_rejects_batch_and_atomic_together() {
+        let mut args = args_for_test();
+        args.apply = Some(PathBuf::from("data.csv"));
+        args.batch = Some(100);
+        args.atomic = true;
+        let err = BatchMode::from_args(&args).unwrap_err();
+        assert!(err.to_string().contains("mutually exclusive"));
+    }
+
+    #[test]
+    fn test_batch_mode_rejects_flags_without_apply() {
+        let mut args = args_for_test();
+        args.batch = Some(100);
+        let err = BatchMode::from_args(&args).unwrap_err();
+        assert!(err.to_string().contains("require --apply"));
+
+        let mut args = args_for_test();
+        args.atomic = true;
+        let err = BatchMode::from_args(&args).unwrap_err();
+        assert!(err.to_string().contains("require --apply"));
+    }
+
+    #[test]
+    fn test_coerce_param_value_csv_rules() {
+        assert!(matches!(coerce_param_value("42"), ParamValue::Integer(42)));
+        assert!(matches!(coerce_param_value("3.14"), ParamValue::Float(_)));
+        assert!(matches!(
+            coerce_param_value("true"),
+            ParamValue::Boolean(true)
+        ));
+        assert!(matches!(
+            coerce_param_value("false"),
+            ParamValue::Boolean(false)
+        ));
+        assert!(matches!(
+            coerce_param_value("Alice"),
+            ParamValue::String(ref s) if s == "Alice"
+        ));
+        assert!(matches!(
+            coerce_param_value(""),
+            ParamValue::String(ref s) if s.is_empty()
+        ));
+    }
+
+    #[test]
+    fn test_param_value_from_json_preserves_types() {
+        use serde_json::json;
+        assert!(matches!(
+            param_value_from_json(json!(42)),
+            ParamValue::Integer(42)
+        ));
+        assert!(matches!(
+            param_value_from_json(json!(2.5)),
+            ParamValue::Float(_)
+        ));
+        assert!(matches!(
+            param_value_from_json(json!(true)),
+            ParamValue::Boolean(true)
+        ));
+        assert!(matches!(
+            param_value_from_json(json!("hello")),
+            ParamValue::String(ref s) if s == "hello"
+        ));
+        assert!(matches!(
+            param_value_from_json(json!(null)),
+            ParamValue::Json(serde_json::Value::Null)
+        ));
+        assert!(matches!(
+            param_value_from_json(json!([1, 2, 3])),
+            ParamValue::Json(serde_json::Value::Array(_))
+        ));
+        assert!(matches!(
+            param_value_from_json(json!({"k": 1})),
+            ParamValue::Json(serde_json::Value::Object(_))
+        ));
     }
 }

@@ -1,7 +1,7 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at specs/003-query-library-params/plan.md
+at specs/004-batch-execution/plan.md
 <!-- SPECKIT END -->
 
 # relate CLI
@@ -29,7 +29,12 @@ src/
     ├── mod.rs           # shared helpers (from_cypher_diagnostic)
     ├── lint.rs          # sync
     ├── parse.rs         # sync
-    ├── query.rs         # async (neo4rs) — parameterized Cypher execution
+    ├── query.rs         # async (neo4rs) — parameterized Cypher execution,
+    │                    #   query library resolution, cypherdoc parsing, and
+    │                    #   --apply batch execution (RowReader trait + CSV /
+    │                    #   JSON-array / JSONL impls, BatchMode, transaction
+    │                    #   batching). Single file by convention; splitting
+    │                    #   into a `query/` submodule is a future RFC.
     ├── write.rs         # async (neo4rs)
     ├── read.rs          # async (neo4rs)
     └── mcp.rs           # async (rmcp stdio)
@@ -65,6 +70,7 @@ skills/
 - **tree-sitter-cypher 0.2** — from crates.io; includes cypherdoc sub-grammar; root node kind: `source_file`, statement kind: `statement`, parameter kind: `parameter`
 - **tree-sitter-gram 0.3.7** — from crates.io
 - **comfy-table 7** — Unicode table rendering for `query` output
+- **csv 1.3** — streaming CSV reader for `relate query --apply`
 - **rmcp 1.6** — MCP stdio server; used only in `mcp` command
 
 ## Neo4j Credentials

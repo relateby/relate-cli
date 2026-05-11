@@ -6,7 +6,9 @@ description: >
   from a .cypher file, or by bare name from a query library — with preflight
   linting, write protection, named parameter support, and inline documentation.
   Covers single statements, multi-statement files, query libraries, file/stmt
-  addressing, --describe documentation, and JSON output.
+  addressing, --describe documentation, JSON output, and batch execution
+  (--apply over .csv / .json / .jsonl data files with configurable transaction
+  batching).
 triggers:
   - "relate query"
   - "run cypher"
@@ -18,6 +20,10 @@ triggers:
   - "query library"
   - "cypher library"
   - "describe query"
+  - "load csv into neo4j"
+  - "bulk load neo4j"
+  - "batch insert neo4j"
+  - "apply query to rows"
 ---
 
 # Skill: relate query
@@ -225,6 +231,93 @@ pass — a lint error in any statement aborts before execution begins.
 
 ---
 
+## Step 8 — Batch execution (`--apply`)
+
+`--apply <FILE>` runs the query once per row of a `.csv`, `.json` (top-level
+array of objects), or `.jsonl` file. Headers/keys map to query parameters by
+name. This is the client-side equivalent of `LOAD CSV` without requiring the
+data file to be reachable by the Neo4j server.
+
+| File ext | Structure | Streams? |
+|----------|-----------|----------|
+| `.csv` | Header row + data rows | Yes |
+| `.json` | Top-level array of objects | No (full parse) |
+| `.jsonl` | One JSON object per line | Yes |
+
+Mutex rules:
+- `--apply` and the positional `[PARAMS]` map are **mutually exclusive**.
+- `--batch <N>` and `--atomic` are **mutually exclusive**.
+- `--batch`/`--atomic` **require** `--apply`.
+
+Transaction modes:
+
+| Flag | Behavior |
+|------|----------|
+| _(default)_ | Commit every 1000 rows |
+| `--batch <N>` | Commit every N rows (N ≥ 1) |
+| `--batch 1` | Commit per row (maximum durability, slowest) |
+| `--atomic` | One transaction for all rows; full rollback on any error |
+
+Examples:
+
+```bash
+# CSV apply with default batching
+relate query create_person --apply people.csv --write
+
+# JSONL apply with tighter batches
+relate query create_person --apply people.jsonl --batch 500 --write
+
+# All-or-nothing apply
+relate query create_person --apply people.json --atomic --write
+
+# Inject a constant across all rows (--param wins on key conflict)
+relate query create_person --apply people.csv --param tenant=acme --write
+
+# Per-row machine-readable output
+relate query create_person --apply people.jsonl --write --json > results.json
+```
+
+Preflight runs **once** against the first row (merged with `--param` constants).
+A missing required parameter aborts before any Bolt connection opens — same
+contract as M1/M2.
+
+Progress streams to **stderr** so stdout (especially under `--json`) stays
+parseable:
+```
+[100/?] applied row 100 (batch 1: 100/1000)
+[1000/?] applied row 1000 (batch 1 committed)
+```
+
+JSON output (`--json` with `--apply`) is a single array of per-row results;
+each element carries a `"row"` 0-based index in addition to the M1/M2 schema:
+
+```json
+[
+  { "row": 0, "source": "./cypher/create_person.cypher", ... },
+  { "row": 1, "source": "./cypher/create_person.cypher", ... }
+]
+```
+
+Failure handling:
+- **Batched mode**: rolls back the in-flight batch and exits 2. Stderr reports
+  `N rows committed (K batches), M rows in current batch rolled back.` Prior
+  fully-committed batches stay committed.
+- **Atomic mode**: rolls back the single transaction and exits 2. Stderr
+  reports `Transaction rolled back. 0 rows committed.`
+- Under `--json`, the partial array of successful rows is flushed to stdout
+  before the error renders on stderr.
+
+Empty input handling (FR-017):
+- Empty data file + query with no required params → exit 0 silently (no
+  connection opened).
+- Empty data file + query with required params → exit 1 with
+  `no input rows found in <file>`.
+
+**Checkpoint**: You have decided on a transaction mode appropriate for your
+data set's size and the consequences of partial failure.
+
+---
+
 ## Exit criteria
 
 Workflow is complete when:
@@ -245,6 +338,11 @@ Workflow is complete when:
 | "It's a `CALL` procedure so it's read-only." | `CALL` is conservatively classified as Write because many procedures mutate the graph. Add `--write` to avoid the preflight abort. |
 | "I need quoted keys, so I'll use `--params file.json` instead." | The positional map literal accepts both `{name: "Alice"}` and `{"name": "Alice"}`. Use `--params` only when parameters live in a separate JSON file. |
 | "I don't need semicolons between statements in a .cypher file." | The tree-sitter-cypher parser requires `;` as a statement separator. Without it, adjacent statements are parsed as an error. Always use `;`. |
+| "It's a large batch, but I'll just trust the default --batch 1000." | For inputs above ~10,000 rows or unknown size, **confirm the transaction mode with the user** before running. The default is safe but the consequences of partial failure differ significantly between `--batch N` (some rows commit) and `--atomic` (all-or-nothing). |
+| "I'll use --apply with my JSON file even though it has 5 million rows." | JSON arrays are parsed fully into memory; JSONL streams line-by-line. For large data sets, convert to JSONL first. |
+| "The CSV has an empty column with no header, but the data is fine." | Empty or duplicate CSV headers are rejected at preflight. Fix the header row before re-running. |
+| "I'll skip --write because --apply is just loading data." | `--apply` does not bypass write classification. If the query mutates the graph (CREATE/MERGE/etc.), `--write` is still required. |
+| "The first row passed preflight so I'm safe." | Preflight validates only the first row's *parameter shape*. Per-row constraint violations (uniqueness, type) still surface at runtime — choose a transaction mode that matches your tolerance for partial commits. |
 
 ---
 
@@ -291,6 +389,19 @@ relate query -e "MATCH (n) RETURN n" \
   --uri bolt://prod.example.com:7687 \
   --user reader \
   --password "$NEO4J_PASSWORD"
+
+# Batch execution — CSV
+relate query create_person --apply people.csv --write
+
+# Batch execution — JSONL with tighter batches
+relate query create_person --apply people.jsonl --batch 500 --write
+
+# Batch execution — all-or-nothing
+relate query create_person --apply people.json --atomic --write
+
+# Batch + constant param + JSON output
+relate query create_person --apply people.csv \
+  --param tenant=acme --write --json > results.json
 ```
 
 ## Connection flags (global)
