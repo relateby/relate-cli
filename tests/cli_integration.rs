@@ -862,4 +862,614 @@ MATCH (p:Person {{name: $name}}) DETACH DELETE p"#
             .code(1)
             .stderr(contains("not found"));
     }
+
+    // ── Milestone 3: --apply batch execution ────────────────────────────────
+
+    /// Helper: write a small CSV file with the given headers and rows.
+    fn write_csv(headers: &[&str], rows: &[&[&str]]) -> NamedTempFile {
+        let mut f = NamedTempFile::with_suffix(".csv").unwrap();
+        writeln!(f, "{}", headers.join(",")).unwrap();
+        for row in rows {
+            writeln!(f, "{}", row.join(",")).unwrap();
+        }
+        f
+    }
+
+    /// Helper: write a temp .cypher file with the given body.
+    fn write_cypher(body: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::with_suffix(".cypher").unwrap();
+        writeln!(f, "{body}").unwrap();
+        f
+    }
+
+    // T026: unknown --apply file extension rejected before any I/O on contents.
+    #[test]
+    fn apply_unknown_extension_exits_one() {
+        let mut f = NamedTempFile::with_suffix(".txt").unwrap();
+        writeln!(f, "anything").unwrap();
+        let q = write_cypher("MATCH (n) RETURN n");
+
+        cmd()
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                q.path().to_str().unwrap(),
+                "--apply",
+                f.path().to_str().unwrap(),
+            ])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("requires a .csv, .json, or .jsonl"));
+    }
+
+    // T016 + FR-006: missing required parameter on row 0 aborts before any connection.
+    #[test]
+    fn apply_csv_missing_column_preflight_fails() {
+        // CSV has only `name`, but the query needs `$age`.
+        let csv = write_csv(&["name"], &[&["Alice"]]);
+        let q = write_cypher("CREATE (n:Person {name: $name, age: $age})");
+
+        cmd()
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                "--password",
+                "dummy",
+                q.path().to_str().unwrap(),
+                "--apply",
+                csv.path().to_str().unwrap(),
+                "--write",
+            ])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("missing required parameter"));
+    }
+
+    // T010: --apply and a positional [PARAMS] map are mutually exclusive.
+    #[test]
+    fn apply_and_params_map_mutual_exclusion_exits_one() {
+        let csv = write_csv(&["name"], &[&["Alice"]]);
+        let q = write_cypher("CREATE (n:Person {name: $name})");
+
+        cmd()
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                q.path().to_str().unwrap(),
+                "{name: \"Bob\"}",
+                "--apply",
+                csv.path().to_str().unwrap(),
+                "--write",
+            ])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("--apply and [PARAMS] are mutually exclusive"));
+    }
+
+    // T003: --batch and --atomic are mutually exclusive.
+    #[test]
+    fn apply_batch_and_atomic_mutual_exclusion_exits_one() {
+        let csv = write_csv(&["name"], &[&["Alice"]]);
+        let q = write_cypher("CREATE (n:Person {name: $name})");
+
+        cmd()
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                q.path().to_str().unwrap(),
+                "--apply",
+                csv.path().to_str().unwrap(),
+                "--batch",
+                "100",
+                "--atomic",
+                "--write",
+            ])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("--batch and --atomic are mutually exclusive"));
+    }
+
+    // T003: --batch without --apply is an error.
+    #[test]
+    fn apply_batch_without_apply_rejected() {
+        cmd()
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                "-e",
+                "MATCH (n) RETURN n",
+                "--batch",
+                "100",
+            ])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("require --apply"));
+    }
+
+    // T012/T018: CSV with empty header column is rejected at preflight.
+    #[test]
+    fn apply_csv_malformed_header_rejected() {
+        let mut f = NamedTempFile::with_suffix(".csv").unwrap();
+        // Three header positions but the middle one is empty.
+        writeln!(f, "name,,age").unwrap();
+        writeln!(f, "Alice,_,30").unwrap();
+        let q = write_cypher("CREATE (n:Person {name: $name})");
+
+        cmd()
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                q.path().to_str().unwrap(),
+                "--apply",
+                f.path().to_str().unwrap(),
+                "--write",
+            ])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("Empty column"));
+    }
+
+    // T019 / FR-016: JSON top-level non-array is rejected.
+    #[test]
+    fn apply_json_non_array_rejected() {
+        let mut f = NamedTempFile::with_suffix(".json").unwrap();
+        writeln!(f, r#"{{"name": "Alice"}}"#).unwrap();
+        let q = write_cypher("CREATE (n:Person {name: $name})");
+
+        cmd()
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                q.path().to_str().unwrap(),
+                "--apply",
+                f.path().to_str().unwrap(),
+                "--write",
+            ])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("top-level array of objects"));
+    }
+
+    // T019 / FR-016: JSON array with non-object element rejected.
+    #[test]
+    fn apply_json_array_non_object_element_rejected() {
+        let mut f = NamedTempFile::with_suffix(".json").unwrap();
+        writeln!(f, r#"[{{"name": "Alice"}}, "not an object"]"#).unwrap();
+        let q = write_cypher("CREATE (n:Person {name: $name})");
+
+        cmd()
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                q.path().to_str().unwrap(),
+                "--apply",
+                f.path().to_str().unwrap(),
+                "--write",
+            ])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("must be an object"));
+    }
+
+    // T020 / FR-015: malformed JSONL line aborts with line number.
+    #[test]
+    fn apply_jsonl_malformed_line_aborts() {
+        let mut f = NamedTempFile::with_suffix(".jsonl").unwrap();
+        // The first line is malformed — PeekableRowReader::open will catch it.
+        writeln!(f, "this is not json").unwrap();
+        writeln!(f, r#"{{"name": "Bob"}}"#).unwrap();
+        let q = write_cypher("CREATE (n:Person {name: $name})");
+
+        cmd()
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                q.path().to_str().unwrap(),
+                "--apply",
+                f.path().to_str().unwrap(),
+                "--write",
+            ])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("line 1").and(contains("invalid JSON")));
+    }
+
+    // FR-017: empty CSV with no required params exits 0 silently (no connection).
+    #[test]
+    fn apply_empty_csv_no_required_params_exits_zero() {
+        let mut f = NamedTempFile::with_suffix(".csv").unwrap();
+        writeln!(f, "name").unwrap(); // header only — zero data rows
+        let q = write_cypher("MATCH (n) RETURN count(n) AS c");
+
+        cmd()
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                q.path().to_str().unwrap(),
+                "--apply",
+                f.path().to_str().unwrap(),
+            ])
+            .assert()
+            .success(); // exit 0; no Neo4j connection attempted
+    }
+
+    // FR-017: empty CSV with required params exits 1 with hint.
+    #[test]
+    fn apply_empty_csv_with_required_params_exits_one() {
+        let mut f = NamedTempFile::with_suffix(".csv").unwrap();
+        writeln!(f, "name").unwrap();
+        let q = write_cypher("CREATE (n:Person {name: $name})");
+
+        cmd()
+            .args([
+                "query",
+                "--uri",
+                "bolt://127.0.0.1:1",
+                q.path().to_str().unwrap(),
+                "--apply",
+                f.path().to_str().unwrap(),
+                "--write",
+            ])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("no input rows found"));
+    }
+
+    // T015 / SC-001 — end-to-end CSV apply, gated by NEO4J_PASSWORD.
+    #[test]
+    fn apply_csv_basic_against_live_neo4j() {
+        let password = match std::env::var("NEO4J_PASSWORD") {
+            Ok(p) if !p.is_empty() => p,
+            _ => return, // skip when no Neo4j is available
+        };
+
+        let csv = write_csv(
+            &["name", "age"],
+            &[
+                &["RelateTestA", "30"],
+                &["RelateTestB", "25"],
+                &["RelateTestC", "42"],
+            ],
+        );
+        let q = write_cypher("CREATE (n:RelateTest {name: $name, age: $age})");
+
+        // Clean up any leftovers from a previous run.
+        cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "MATCH (n:RelateTest) DETACH DELETE n",
+                "--write",
+            ])
+            .assert()
+            .success();
+
+        cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                q.path().to_str().unwrap(),
+                "--apply",
+                csv.path().to_str().unwrap(),
+                "--write",
+            ])
+            .assert()
+            .success();
+
+        // Verify all three nodes exist.
+        cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "MATCH (n:RelateTest) RETURN count(n) AS c",
+            ])
+            .assert()
+            .success()
+            .stdout(contains("3"));
+
+        // Cleanup.
+        cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "MATCH (n:RelateTest) DETACH DELETE n",
+                "--write",
+            ])
+            .assert()
+            .success();
+    }
+
+    // T040 / FR-013 — per-row JSON output schema, gated by NEO4J_PASSWORD.
+    #[test]
+    fn apply_json_output_includes_row_index() {
+        let password = match std::env::var("NEO4J_PASSWORD") {
+            Ok(p) if !p.is_empty() => p,
+            _ => return,
+        };
+
+        let mut jsonl = NamedTempFile::with_suffix(".jsonl").unwrap();
+        writeln!(jsonl, r#"{{"name": "RelateJ_A"}}"#).unwrap();
+        writeln!(jsonl, r#"{{"name": "RelateJ_B"}}"#).unwrap();
+        let q = write_cypher("MERGE (n:RelateJTest {name: $name})");
+
+        // Cleanup.
+        cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "MATCH (n:RelateJTest) DETACH DELETE n",
+                "--write",
+            ])
+            .assert()
+            .success();
+
+        let output = cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                q.path().to_str().unwrap(),
+                "--apply",
+                jsonl.path().to_str().unwrap(),
+                "--write",
+                "--json",
+            ])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+
+        let parsed: serde_json::Value = serde_json::from_slice(&output).expect("valid JSON");
+        let arr = parsed.as_array().expect("top-level array");
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["row"].as_u64(), Some(0));
+        assert_eq!(arr[1]["row"].as_u64(), Some(1));
+
+        // Cleanup.
+        cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "MATCH (n:RelateJTest) DETACH DELETE n",
+                "--write",
+            ])
+            .assert()
+            .success();
+    }
+
+    // T041 / regression — M1 single-statement JSON output omits the `row` field.
+    #[test]
+    fn single_row_json_omits_row_field() {
+        let password = match std::env::var("NEO4J_PASSWORD") {
+            Ok(p) if !p.is_empty() => p,
+            _ => return,
+        };
+
+        let output = cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "RETURN 1 AS one",
+                "--json",
+            ])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+
+        let parsed: serde_json::Value = serde_json::from_slice(&output).expect("valid JSON");
+        let arr = parsed.as_array().expect("top-level array");
+        assert_eq!(arr.len(), 1);
+        assert!(
+            arr[0].get("row").is_none(),
+            "M1 schema must not include `row`; got: {arr:?}"
+        );
+    }
+
+    // Mid-row failure under --batch N: verifies (a) the primary error line
+    // surfaces the Neo4j error code, (b) partial-commit accounting is
+    // exact, and (c) the in-flight batch is rolled back while prior batches
+    // remain committed. Gated by NEO4J_PASSWORD.
+    #[test]
+    fn apply_batched_mid_row_failure_reports_neo4j_code_and_partial_commit() {
+        let password = match std::env::var("NEO4J_PASSWORD") {
+            Ok(p) if !p.is_empty() => p,
+            _ => return,
+        };
+
+        // 5 divisors; the third is 0 → ArithmeticError.
+        let csv = write_csv(&["d"], &[&["1"], &["2"], &["0"], &["4"], &["5"]]);
+        // The query intentionally fails when $d = 0.
+        let q = write_cypher("CREATE (n:RelateFailTest {value: 100 / toInteger($d)})");
+
+        // Cleanup any leftovers.
+        cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "MATCH (n:RelateFailTest) DETACH DELETE n",
+                "--write",
+            ])
+            .assert()
+            .success();
+
+        // --batch 2: rows 1+2 commit (batch 1), row 3 fails inside batch 2 →
+        // 2 committed, 1 rolled back, rows 4-5 never attempted.
+        let out = cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                q.path().to_str().unwrap(),
+                "--apply",
+                csv.path().to_str().unwrap(),
+                "--batch",
+                "2",
+                "--write",
+            ])
+            .assert()
+            .failure()
+            .code(2)
+            .get_output()
+            .clone();
+
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("Neo.ClientError.Statement.ArithmeticError"),
+            "stderr should name the Neo4j error code on the primary error line; got:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("Error on row 3:"),
+            "stderr should identify the failing row (1-based); got:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("2 rows committed (1 batch)") || stderr.contains("2 rows committed"),
+            "stderr should report 2 rows committed across 1 batch; got:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("Underlying:"),
+            "stderr should include an Underlying: line with the error message; got:\n{stderr}"
+        );
+
+        // Verify the database state: exactly 2 RelateFailTest nodes survive
+        // (rows 1 and 2 from the first batch); row 3 was rolled back.
+        let count_out = cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "MATCH (n:RelateFailTest) RETURN count(n) AS c",
+                "--json",
+            ])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        let parsed: serde_json::Value = serde_json::from_slice(&count_out).expect("valid JSON");
+        let c = parsed[0]["rows"][0]["c"].as_u64().expect("count value");
+        assert_eq!(c, 2, "expected exactly 2 committed rows after batch 1");
+
+        // Cleanup.
+        cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "MATCH (n:RelateFailTest) DETACH DELETE n",
+                "--write",
+            ])
+            .assert()
+            .success();
+    }
+
+    // Mid-row failure under --atomic: full rollback, zero committed rows.
+    // Gated by NEO4J_PASSWORD.
+    #[test]
+    fn apply_atomic_mid_row_failure_rolls_back_everything() {
+        let password = match std::env::var("NEO4J_PASSWORD") {
+            Ok(p) if !p.is_empty() => p,
+            _ => return,
+        };
+
+        let csv = write_csv(&["d"], &[&["1"], &["2"], &["0"], &["4"]]);
+        let q = write_cypher("CREATE (n:RelateAtomicFail {value: 100 / toInteger($d)})");
+
+        cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "MATCH (n:RelateAtomicFail) DETACH DELETE n",
+                "--write",
+            ])
+            .assert()
+            .success();
+
+        let out = cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                q.path().to_str().unwrap(),
+                "--apply",
+                csv.path().to_str().unwrap(),
+                "--atomic",
+                "--write",
+            ])
+            .assert()
+            .failure()
+            .code(2)
+            .get_output()
+            .clone();
+
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("Neo.ClientError.Statement.ArithmeticError"),
+            "stderr should name the Neo4j error code; got:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("Transaction rolled back. 0 rows committed."),
+            "stderr should report full rollback; got:\n{stderr}"
+        );
+
+        // Verify zero committed rows.
+        let count_out = cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "MATCH (n:RelateAtomicFail) RETURN count(n) AS c",
+                "--json",
+            ])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        let parsed: serde_json::Value = serde_json::from_slice(&count_out).expect("valid JSON");
+        let c = parsed[0]["rows"][0]["c"].as_u64().expect("count value");
+        assert_eq!(c, 0, "atomic failure must leave zero rows committed");
+    }
 }

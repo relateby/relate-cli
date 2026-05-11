@@ -74,6 +74,7 @@ Expected: help text listing `lint`, `parse`, `query`, `write`, `read`, `mcp` sub
 |---|---|---|
 | Validate Cypher or Gram files | `relate lint` | `relate-lint` |
 | Execute a Cypher query against Neo4j | `relate query` | `relate-query` |
+| Batch-load a CSV / JSON / JSONL into Neo4j | `relate query --apply` | `relate-query` |
 | Inspect parse tree of a file | `relate parse` | *(skill coming soon)* |
 | Write Gram graph data to Neo4j | `relate write` | *(skill coming soon)* |
 | Query Neo4j and save as Gram | `relate read` | *(skill coming soon)* |

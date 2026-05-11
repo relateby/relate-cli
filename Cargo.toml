@@ -34,6 +34,7 @@ dotenvy = "0.15"
 tree-sitter = "0.26"
 tree-sitter-cypher = "0.2"
 tree-sitter-cypherdoc = "0.2"
+csv = "1.3"
 
 [dev-dependencies]
 assert_cmd = "2"

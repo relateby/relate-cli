@@ -157,7 +157,15 @@ pub struct McpArgs {
                   DISCOVERY:\n  \
                   --list with no [QUERY] lists all named statements in the library.\n  \
                   --list [QUERY] lists statements in one file. Pair with --json for\n  \
-                  scripting.",
+                  scripting.\n\n\
+                  BATCH EXECUTION:\n  \
+                  --apply <FILE> runs the query once per row of a .csv, .json, or .jsonl\n  \
+                  data file. Headers/keys map to query parameters by name. Mutually\n  \
+                  exclusive with [PARAMS]. Use --param to inject constants across rows.\n  \
+                  Transaction mode: default commits every 1000 rows; --batch N tunes the\n  \
+                  interval; --atomic wraps all rows in one transaction (full rollback on\n  \
+                  any error). Progress streams to stderr; --json emits one result object\n  \
+                  per row with an added 'row' index field.",
     after_help = "Examples:\n  \
                   relate query -e 'MATCH (n:Person) RETURN n.name AS name'\n  \
                   relate query find_person '{name: \"Alice\"}'\n  \
@@ -168,6 +176,9 @@ pub struct McpArgs {
                   relate query --list --json\n  \
                   relate query --describe person\n  \
                   relate query find_person.cypher --param name=Alice\n  \
+                  relate query create_person --apply people.csv --write\n  \
+                  relate query create_person --apply people.jsonl --batch 500 --write\n  \
+                  relate query create_person --apply people.json --atomic --write\n  \
                   relate query -e 'MATCH (n) RETURN count(n)' --json"
 )]
 pub struct QueryArgs {
@@ -206,6 +217,18 @@ pub struct QueryArgs {
     /// Query library directory for bare-name resolution
     #[arg(long, default_value = "./cypher/")]
     pub cypher_dir: PathBuf,
+
+    /// Apply the query once per row in a .csv, .json, or .jsonl file (mutually exclusive with [PARAMS])
+    #[arg(long)]
+    pub apply: Option<PathBuf>,
+
+    /// Rows per transaction for --apply (default: 1000; mutually exclusive with --atomic; requires --apply)
+    #[arg(long)]
+    pub batch: Option<usize>,
+
+    /// Wrap all --apply iterations in a single transaction (mutually exclusive with --batch; requires --apply)
+    #[arg(long)]
+    pub atomic: bool,
 
     /// Output results as JSON
     #[arg(long)]
