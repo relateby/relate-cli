@@ -148,17 +148,36 @@ pub struct McpArgs {
                   runtime errors (unknown labels, constraint violations) can still \
                   occur after lint passes.\n\n\
                   Write operations (CREATE, MERGE, SET, DELETE, REMOVE, FOREACH) \
-                  require --write.",
+                  require --write.\n\n\
+                  QUERY resolution:\n  \
+                  A bare query name (no path separator, no .cypher extension) is\n  \
+                  resolved against the query library directory (default: ./cypher/).\n  \
+                  Use 'file/stmt' to target a named statement within a multi-statement\n  \
+                  file (e.g. relate query person/upsert).\n\n\
+                  DISCOVERY:\n  \
+                  --list with no [QUERY] lists all named statements in the library.\n  \
+                  --list [QUERY] lists statements in one file. Pair with --json for\n  \
+                  scripting.",
     after_help = "Examples:\n  \
                   relate query -e 'MATCH (n:Person) RETURN n.name AS name'\n  \
-                  relate query -e 'CREATE (n:Person {name: $name})' --param name=Alice --write\n  \
+                  relate query find_person '{name: \"Alice\"}'\n  \
+                  relate query create_person '{name: \"Alice\", age: 30}' --write\n  \
+                  relate query person/upsert '{name: \"Alice\"}' --write\n  \
+                  relate query --list\n  \
+                  relate query --list movies\n  \
+                  relate query --list --json\n  \
+                  relate query --describe person\n  \
                   relate query find_person.cypher --param name=Alice\n  \
-                  relate query find_person.cypher --params params.json\n  \
                   relate query -e 'MATCH (n) RETURN count(n)' --json"
 )]
 pub struct QueryArgs {
-    /// .cypher file to execute (mutually exclusive with -e)
-    pub query: Option<PathBuf>,
+    /// .cypher file path, bare query name, or file/stmt address (mutually exclusive with -e)
+    pub query: Option<String>,
+
+    /// Cypher map literal of named parameters e.g. '{name: "Alice", age: 30}'.
+    /// Merged with --param flags; --param takes precedence on conflicts.
+    /// Mutually exclusive with --params.
+    pub params_map: Option<String>,
 
     /// Inline Cypher statement (repeatable; mutually exclusive with [QUERY])
     #[arg(short = 'e', long = "expr")]
@@ -175,6 +194,18 @@ pub struct QueryArgs {
     /// Allow write operations (CREATE, MERGE, SET, DELETE, REMOVE, FOREACH)
     #[arg(long)]
     pub write: bool,
+
+    /// List named statements in the query library (or in [QUERY] if given)
+    #[arg(long)]
+    pub list: bool,
+
+    /// Print cypherdoc documentation for the query without executing
+    #[arg(long)]
+    pub describe: bool,
+
+    /// Query library directory for bare-name resolution
+    #[arg(long, default_value = "./cypher/")]
+    pub cypher_dir: PathBuf,
 
     /// Output results as JSON
     #[arg(long)]
