@@ -4,12 +4,18 @@ on:
   workflow_run:
     workflows: ["Release"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to deploy (e.g. v0.1.0)"
+        required: true
 
 jobs:
   update:
     name: Deploy website to gh-pages
-    # Only run when Release succeeded and triggered by a version tag
-    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') }}
+    # For workflow_run: only run when Release succeeded and triggered by a version tag
+    # For workflow_dispatch: always run (tag is provided explicitly)
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -18,7 +24,7 @@ jobs:
       - name: Checkout main (website source)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.event.workflow_run.head_sha }}
           path: main
 
       - name: Determine version and check prerelease
@@ -26,7 +32,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ github.event.workflow_run.head_branch }}"
+          TAG="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.event.workflow_run.head_branch }}"
           VERSION="${TAG#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
