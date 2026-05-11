@@ -8,7 +8,7 @@ on:
 jobs:
   update:
     name: Deploy website to gh-pages
-    # Only run when Release succeeded, triggered by a version tag, and it's a stable release
+    # Only run when Release succeeded and triggered by a version tag
     if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') }}
     runs-on: ubuntu-latest
     permissions:
@@ -20,12 +20,6 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           path: main
-
-      - name: Checkout gh-pages
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: gh-pages
 
       - name: Determine version and check prerelease
         id: meta
@@ -39,11 +33,30 @@ jobs:
           PRERELEASE=$(gh release view "$TAG" --repo "${{ github.repository }}" --json isPrerelease --jq '.isPrerelease')
           echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
 
-      - name: Skip if prerelease
-        if: ${{ steps.meta.outputs.prerelease == 'true' }}
-        run: echo "Prerelease detected — skipping website deploy." && exit 0
+      - name: Initialize gh-pages branch if absent
+        if: ${{ steps.meta.outputs.prerelease != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd main
+          if ! git ls-remote --exit-code origin gh-pages; then
+            echo "gh-pages branch does not exist — creating orphan branch"
+            git checkout --orphan gh-pages
+            git rm -rf . --quiet
+            git commit --allow-empty -m "init: create gh-pages branch"
+            git push origin gh-pages
+            git checkout -
+          fi
+
+      - name: Checkout gh-pages
+        if: ${{ steps.meta.outputs.prerelease != 'true' }}
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
 
       - name: Download install scripts from release
+        if: ${{ steps.meta.outputs.prerelease != 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -54,6 +67,7 @@ jobs:
             --repo "${{ github.repository }}"
 
       - name: Sync website files and update version
+        if: ${{ steps.meta.outputs.prerelease != 'true' }}
         env:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
@@ -74,6 +88,7 @@ jobs:
             gh-pages/index.html
 
       - name: Commit and push to gh-pages
+        if: ${{ steps.meta.outputs.prerelease != 'true' }}
         run: |
           cd gh-pages
           git config user.name  "github-actions[bot]"
