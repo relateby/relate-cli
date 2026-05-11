@@ -41,6 +41,8 @@ jobs:
           cd main
           if ! git ls-remote --exit-code origin gh-pages; then
             echo "gh-pages branch does not exist — creating orphan branch"
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
             git checkout --orphan gh-pages
             git rm -rf . --quiet
             git commit --allow-empty -m "init: create gh-pages branch"
