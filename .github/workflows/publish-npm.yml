@@ -1,15 +1,13 @@
 name: Publish to npm
 
 on:
-  workflow_run:
-    workflows: ["Release"]
-    types: [completed]
+  push:
+    tags:
+      - 'v[0-9]*'
 
 jobs:
   publish:
     name: Publish npm packages
-    # Only run when the Release workflow succeeded and was triggered by a version tag
-    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -17,20 +15,38 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
 
+      - name: Wait for GitHub Release to be published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          echo "Waiting for release ${TAG} to be published..."
+          for i in $(seq 1 40); do
+            IS_DRAFT=$(gh release view "$TAG" --repo "${{ github.repository }}" \
+              --json isDraft --jq '.isDraft' 2>/dev/null || echo "true")
+            if [[ "$IS_DRAFT" == "false" ]]; then
+              echo "Release is published."
+              break
+            fi
+            echo "Attempt ${i}/40: not ready yet, waiting 30s..."
+            sleep 30
+          done
+          if [[ "$IS_DRAFT" != "false" ]]; then
+            echo "Timed out waiting for release to be published." && exit 1
+          fi
+
       - name: Determine version and dist-tag
         id: meta
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ github.event.workflow_run.head_branch }}"
+          TAG="${{ github.ref_name }}"
           VERSION="${TAG#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
@@ -55,7 +71,6 @@ jobs:
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           NPM_TAG: ${{ steps.meta.outputs.npm_tag }}
-          NODE_AUTH_TOKEN: ""
         run: |
           set -euo pipefail
           SCRIPT_DIR="distribution/npm"
@@ -96,7 +111,6 @@ jobs:
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           NPM_TAG: ${{ steps.meta.outputs.npm_tag }}
-          NODE_AUTH_TOKEN: ""
         run: |
           set -euo pipefail
           WORK_DIR="/tmp/relate-npm/__relateby__cli"
