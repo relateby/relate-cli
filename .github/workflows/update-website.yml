@@ -1,14 +1,15 @@
 name: Update website
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
 
 jobs:
   update:
     name: Deploy website to gh-pages
-    # Only run for stable releases (no prerelease suffix)
-    if: ${{ !github.event.release.prerelease }}
+    # Only run when Release succeeded, triggered by a version tag, and it's a stable release
+    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -17,6 +18,7 @@ jobs:
       - name: Checkout main (website source)
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           path: main
 
       - name: Checkout gh-pages
@@ -25,18 +27,27 @@ jobs:
           ref: gh-pages
           path: gh-pages
 
-      - name: Determine version
+      - name: Determine version and check prerelease
         id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
-          VERSION="${VERSION#v}"
+          TAG="${{ github.event.workflow_run.head_branch }}"
+          VERSION="${TAG#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          PRERELEASE=$(gh release view "$TAG" --repo "${{ github.repository }}" --json isPrerelease --jq '.isPrerelease')
+          echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if prerelease
+        if: ${{ steps.meta.outputs.prerelease == 'true' }}
+        run: echo "Prerelease detected — skipping website deploy." && exit 0
 
       - name: Download install scripts from release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download "${{ github.event.release.tag_name }}" \
+          gh release download "${{ steps.meta.outputs.tag }}" \
             --dir /tmp/release-scripts \
             --pattern "install.sh" \
             --pattern "install.ps1" \
@@ -71,6 +82,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to deploy."
           else
-            git commit -m "deploy: website for v${{ steps.meta.outputs.version }}"
+            git commit -m "deploy: website for ${{ steps.meta.outputs.tag }}"
             git push origin gh-pages
           fi
