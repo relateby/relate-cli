@@ -18,3 +18,4 @@ targets = [
 create-release = true
 install-updater = false
 npm-scope = "@relateby"
+allow-dirty = ["ci"]
