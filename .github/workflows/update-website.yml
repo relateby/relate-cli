@@ -64,8 +64,8 @@ jobs:
         run: |
           gh release download "${{ steps.meta.outputs.tag }}" \
             --dir /tmp/release-scripts \
-            --pattern "install.sh" \
-            --pattern "install.ps1" \
+            --pattern "relate-installer.sh" \
+            --pattern "relate-installer.ps1" \
             --repo "${{ github.repository }}"
 
       - name: Sync website files and update version
@@ -81,8 +81,9 @@ jobs:
 
           # Overwrite install scripts with the ones from the release
           # (cargo-dist generates these; they are more current than what's in main)
-          cp /tmp/release-scripts/install.sh  gh-pages/install.sh
-          cp /tmp/release-scripts/install.ps1 gh-pages/install.ps1
+          # cargo-dist names them relate-installer.sh/.ps1; serve as install.sh/.ps1
+          cp /tmp/release-scripts/relate-installer.sh  gh-pages/install.sh
+          cp /tmp/release-scripts/relate-installer.ps1 gh-pages/install.ps1
 
           # Update version badge in index.html
           sed -i \
