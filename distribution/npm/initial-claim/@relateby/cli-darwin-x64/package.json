@@ -1,0 +1,12 @@
+{
+  "name": "@relateby/cli-darwin-x64",
+  "version": "0.0.0",
+  "description": "relate CLI binary for macOS x64 (placeholder)",
+  "license": "MIT",
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/relateby/relate-cli"
+  }
+}

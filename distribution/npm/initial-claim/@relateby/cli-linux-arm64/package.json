@@ -1,0 +1,12 @@
+{
+  "name": "@relateby/cli-linux-arm64",
+  "version": "0.0.0",
+  "description": "relate CLI binary for Linux arm64 (placeholder)",
+  "license": "MIT",
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/relateby/relate-cli"
+  }
+}

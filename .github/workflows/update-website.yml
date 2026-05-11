@@ -1,0 +1,76 @@
+name: Update website
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update:
+    name: Deploy website to gh-pages
+    # Only run for stable releases (no prerelease suffix)
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main (website source)
+        uses: actions/checkout@v4
+        with:
+          path: main
+
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Determine version
+        id: meta
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Download install scripts from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ github.event.release.tag_name }}" \
+            --dir /tmp/release-scripts \
+            --pattern "install.sh" \
+            --pattern "install.ps1" \
+            --repo "${{ github.repository }}"
+
+      - name: Sync website files and update version
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Copy entire website/ directory from main branch
+          rsync -av --delete main/website/ gh-pages/ \
+            --exclude ".git"
+
+          # Overwrite install scripts with the ones from the release
+          # (cargo-dist generates these; they are more current than what's in main)
+          cp /tmp/release-scripts/install.sh  gh-pages/install.sh
+          cp /tmp/release-scripts/install.ps1 gh-pages/install.ps1
+
+          # Update version badge in index.html
+          sed -i \
+            "s|<span id=\"current-version\">[^<]*</span>|<span id=\"current-version\">${VERSION}</span>|g" \
+            gh-pages/index.html
+
+      - name: Commit and push to gh-pages
+        run: |
+          cd gh-pages
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No changes to deploy."
+          else
+            git commit -m "deploy: website for v${{ steps.meta.outputs.version }}"
+            git push origin gh-pages
+          fi

@@ -1,0 +1,101 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    name: Publish npm packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # required for npm provenance / trusted publisher
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Determine version and dist-tag
+        id: meta
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.event.release.prerelease }}" == "true" ]]; then
+            echo "npm_tag=next" >> "$GITHUB_OUTPUT"
+          else
+            echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download release archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/relate-archives
+          gh release download "${{ github.event.release.tag_name }}" \
+            --dir /tmp/relate-archives \
+            --pattern "relate-*.tar.gz" \
+            --pattern "relate-*.zip"
+
+      - name: Build and publish platform packages
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          NPM_TAG: ${{ steps.meta.outputs.npm_tag }}
+        run: |
+          set -euo pipefail
+          SCRIPT_DIR="distribution/npm"
+          WORK_DIR="/tmp/relate-npm"
+
+          while IFS=$'\t' read -r target npm_name os cpu; do
+            [[ "$target" == "target" ]] && continue   # skip header
+
+            echo "==> Building ${npm_name}@${VERSION} (${target})"
+
+            PKG_DIR="${WORK_DIR}/${npm_name//\//__}"
+            mkdir -p "${PKG_DIR}/bin"
+
+            if [[ "$os" == "win32" ]]; then
+              ARCHIVE="relate-${target}.zip"
+              unzip -j "/tmp/relate-archives/${ARCHIVE}" "*/relate.exe" -d "${PKG_DIR}/bin/"
+              EXT=".exe"
+            else
+              ARCHIVE="relate-${target}.tar.gz"
+              tar -xzf "/tmp/relate-archives/${ARCHIVE}" --strip-components=1 -C "${PKG_DIR}/bin/"
+              chmod +x "${PKG_DIR}/bin/relate"
+              EXT=""
+            fi
+
+            sed \
+              -e "s|%%NAME%%|${npm_name}|g" \
+              -e "s|%%VERSION%%|${VERSION}|g" \
+              -e "s|%%OS%%|${os}|g" \
+              -e "s|%%CPU%%|${cpu}|g" \
+              -e "s|%%EXT%%|${EXT}|g" \
+              "${SCRIPT_DIR}/cli-platform/package.json.tmpl" > "${PKG_DIR}/package.json"
+
+            npm publish "${PKG_DIR}" --tag "${NPM_TAG}" --access public --provenance
+
+          done < "${SCRIPT_DIR}/platforms.tsv"
+
+      - name: Build and publish wrapper package
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          NPM_TAG: ${{ steps.meta.outputs.npm_tag }}
+        run: |
+          set -euo pipefail
+          WORK_DIR="/tmp/relate-npm/__relateby__cli"
+          mkdir -p "${WORK_DIR}/bin"
+
+          cp distribution/npm/cli/bin/relate.js "${WORK_DIR}/bin/relate.js"
+          chmod +x "${WORK_DIR}/bin/relate.js"
+
+          sed \
+            -e "s|%%VERSION%%|${VERSION}|g" \
+            distribution/npm/cli/package.json.tmpl > "${WORK_DIR}/package.json"
+
+          npm publish "${WORK_DIR}" --tag "${NPM_TAG}" --access public --provenance

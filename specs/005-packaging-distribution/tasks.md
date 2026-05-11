@@ -18,11 +18,11 @@
 
 **Purpose**: Initialize release tooling, create external repos, and scaffold directory structure.
 
-- [ ] T001 Run `cargo install cargo-dist && cargo dist init` (select: shell, powershell, homebrew, npm installers; tap = `relateby/homebrew-tap`; npm-scope = `@relateby`; 5 targets); commit resulting changes to `Cargo.toml` and generated `.github/workflows/release.yml`
-- [ ] T002 Create public GitHub repo `relateby/homebrew-tap` with a `Formula/` directory and `Formula/README.md` stub file
-- [ ] T003 [P] Create `CHANGELOG.md` at repo root with a `## Unreleased` section and standard keep-a-changelog header
-- [ ] T004 [P] Create `distribution/npm/` directory structure: `platforms.tsv` (empty), `cli/bin/` (empty), `cli-platform/` (empty)
-- [ ] T005 [P] Create `website/` directory structure: `fonts/`, `CNAME`, `robots.txt`, `sitemap.xml` (all as stubs)
+- [x] T001 Run `cargo install cargo-dist && cargo dist init` (select: shell, powershell, homebrew, npm installers; tap = `relateby/homebrew-tap`; npm-scope = `@relateby`; 5 targets); commit resulting changes to `Cargo.toml` and generated `.github/workflows/release.yml`
+- [x] T002 Create public GitHub repo `relateby/homebrew-tap` with a `Formula/` directory and `Formula/README.md` stub file
+- [x] T003 [P] Create `CHANGELOG.md` at repo root with a `## Unreleased` section and standard keep-a-changelog header
+- [x] T004 [P] Create `distribution/npm/` directory structure: `platforms.tsv` (empty), `cli/bin/` (empty), `cli-platform/` (empty)
+- [x] T005 [P] Create `website/` directory structure: `fonts/`, `CNAME`, `robots.txt`, `sitemap.xml` (all as stubs)
 
 ---
 
@@ -33,10 +33,10 @@
 **⚠️ CRITICAL**: No user story validation can be completed until this phase is done.
 
 - [ ] T006 Create fine-grained GitHub PAT scoped only to `relateby/homebrew-tap` with Contents: Read and Write permission; store as `HOMEBREW_TAP_TOKEN` secret in `relateby/relate-cli` Actions secrets
-- [ ] T007 [P] Create crates.io API token (crates.io → Account Settings → API Tokens); store as `CARGO_REGISTRY_TOKEN` secret in `relateby/relate-cli` Actions secrets
-- [ ] T008 [P] Create `@relateby` npm organization at npmjs.com; generate an Automation token; store as `NPM_TOKEN` secret in `relateby/relate-cli` Actions secrets
-- [ ] T009 Add CNAME record in GoDaddy DNS Manager for `relateby.dev`: Type = CNAME, Name/Host = `cli`, Points To = `relateby.github.io`, TTL = 600; remove any pre-existing conflicting "parked" CNAME first
-- [ ] T010 [P] Publish six `0.0.0` placeholder packages to claim npm names: `@relateby/cli`, `@relateby/cli-linux-x64`, `@relateby/cli-linux-arm64`, `@relateby/cli-darwin-x64`, `@relateby/cli-darwin-arm64`, `@relateby/cli-win32-x64`
+- [x] T007 [P] Create crates.io API token (crates.io → Account Settings → API Tokens); store as `CARGO_REGISTRY_TOKEN` secret in `relateby/relate-cli` Actions secrets
+- [x] T008 [P] Create `@relateby` npm organization at npmjs.com; generate an Automation token; store as `NPM_TOKEN` secret in `relateby/relate-cli` Actions secrets
+- [x] T009 Add CNAME record in GoDaddy DNS Manager for `relateby.dev`: Type = CNAME, Name/Host = `cli`, Points To = `relateby.github.io`, TTL = 600; remove any pre-existing conflicting "parked" CNAME first
+- [x] T010 [P] Publish six `0.0.0` placeholder packages to claim npm names: `@relateby/cli`, `@relateby/cli-linux-x64`, `@relateby/cli-linux-arm64`, `@relateby/cli-darwin-x64`, `@relateby/cli-darwin-arm64`, `@relateby/cli-win32-x64`
 
 **Checkpoint**: Secrets exist in repo settings, DNS record is live (`dig cli.relateby.dev CNAME +short` returns `relateby.github.io.`), npm names are claimed.
 
@@ -55,12 +55,12 @@
 
 ### Implementation
 
-- [ ] T011 [US5] Add `cargo publish` step to `.github/workflows/release.yml` (after GitHub Release creation; gated on `!contains(github.ref, '-')` to skip prereleases)
+- [x] T011 [US5] Add `cargo publish` step to `.github/workflows/release.yml` (after GitHub Release creation; gated on `!contains(github.ref, '-')` to skip prereleases)
 - [ ] T012 [US5] Push prerelease tag `v0.1.0-beta.1`; verify: GitHub Release is created and marked prerelease; `Formula/relate.rb` is NOT present in `relateby/homebrew-tap`; crates.io is NOT updated
 - [ ] T013 [US5] Push stable tag `v0.1.0`; verify: GitHub Release contains 5 `.tar.gz`/`.zip` archives, `relate-checksums.txt`, `dist-manifest.json`, `install.sh`, and `install.ps1`
 - [ ] T014 [US5] Verify `Formula/relate.rb` is present and correct in `relateby/homebrew-tap` after the stable release pipeline completes
 - [ ] T015 [US5] [P] Verify `relate` version `0.1.0` appears on crates.io after the stable release pipeline completes
-- [ ] T016 [US1] Write `update-website.yml` initial version: trigger on `release` event (type: `published`, stable only); copies `install.sh` and `install.ps1` from release assets to `website/` in the `gh-pages` branch; commits and pushes — file: `.github/workflows/update-website.yml`
+- [x] T016 [US1] Write `update-website.yml` initial version: trigger on `release` event (type: `published`, stable only); copies `install.sh` and `install.ps1` from release assets to `website/` in the `gh-pages` branch; commits and pushes — file: `.github/workflows/update-website.yml`
 - [ ] T017 [US1] Verify `curl -sSfL https://cli.relateby.dev/install.sh | bash` succeeds on macOS Apple Silicon (aarch64); confirm `relate --version` prints `0.1.0`
 - [ ] T018 [US1] [P] Verify `curl -sSfL https://cli.relateby.dev/install.sh | bash` succeeds on Ubuntu x86_64; confirm `relate --version` prints `0.1.0`
 - [ ] T019 [US1] Verify install script aborts with a clear error message when the downloaded archive sha256 does not match `relate-checksums.txt`
@@ -94,20 +94,20 @@
 
 ### Implementation
 
-- [ ] T024 [US4] Write `website/index.html` hero section: heading, tagline, OS-detecting install tab bar (macOS · Linux · Windows · Homebrew · npm · cargo), one command per tab, copy-to-clipboard buttons — file: `website/index.html`
-- [ ] T025 [US4] Add OS detection JS to `website/index.html`: reads `navigator.platform` / `navigator.userAgent`; pre-selects matching tab on page load; falls back to macOS
-- [ ] T026 [US4] Add Quickstart section to `website/index.html`: 4 numbered steps (install → `relate lint` → connect to Neo4j → run a query)
-- [ ] T027 [US4] [P] Add Commands section to `website/index.html`: tabbed examples for `lint`, `parse`, `query`, `query --apply`, `mcp` with syntax-highlighted code blocks
-- [ ] T028 [US4] [P] Add Agent Skills section to `website/index.html`: how to install the skill for Claude Code / Cursor / Copilot with copy-able `npx skills` command
-- [ ] T029 [US4] [P] Add Install matrix table to `website/index.html`: all 4 channels × platforms with one-liner commands
-- [ ] T030 [US4] Add light/dark theme toggle to `website/index.html`: CSS custom properties, `data-theme` attribute, toggle button; theme persists via `localStorage`
-- [ ] T031 [US4] [P] Add `<span id="current-version">` version badge to `website/index.html` hero section (populated by `update-website.yml`)
+- [x] T024 [US4] Write `website/index.html` hero section: heading, tagline, OS-detecting install tab bar (macOS · Linux · Windows · Homebrew · npm · cargo), one command per tab, copy-to-clipboard buttons — file: `website/index.html`
+- [x] T025 [US4] Add OS detection JS to `website/index.html`: reads `navigator.platform` / `navigator.userAgent`; pre-selects matching tab on page load; falls back to macOS
+- [x] T026 [US4] Add Quickstart section to `website/index.html`: 4 numbered steps (install → `relate lint` → connect to Neo4j → run a query)
+- [x] T027 [US4] [P] Add Commands section to `website/index.html`: tabbed examples for `lint`, `parse`, `query`, `query --apply`, `mcp` with syntax-highlighted code blocks
+- [x] T028 [US4] [P] Add Agent Skills section to `website/index.html`: how to install the skill for Claude Code / Cursor / Copilot with copy-able `npx skills` command
+- [x] T029 [US4] [P] Add Install matrix table to `website/index.html`: all 4 channels × platforms with one-liner commands
+- [x] T030 [US4] Add light/dark theme toggle to `website/index.html`: CSS custom properties, `data-theme` attribute, toggle button; theme persists via `localStorage`
+- [x] T031 [US4] [P] Add `<span id="current-version">` version badge to `website/index.html` hero section (populated by `update-website.yml`)
 - [ ] T032 [US4] [P] Download and add self-hosted fonts to `website/fonts/`: Public Sans (Regular, Medium, SemiBold `.woff2`) and Fira Code (Regular `.woff2`)
-- [ ] T033 [US4] Write CSS for `website/index.html`: CSS custom properties for light/dark theme, responsive grid, terminal code block styling, tab components — all inline or in a `<style>` block
-- [ ] T034 [US4] Write `website/CNAME` containing exactly `cli.relateby.dev`
-- [ ] T035 [US4] [P] Write `website/robots.txt` (allow all) and `website/sitemap.xml` (single URL: `https://cli.relateby.dev/`)
-- [ ] T036 [US4] Extend `.github/workflows/update-website.yml` to also update the `<span id="current-version">` text in `website/index.html` with the release tag version before pushing to `gh-pages`
-- [ ] T037 [US4] Enable GitHub Pages on `relateby/relate-cli`: Source = `gh-pages` branch; Custom domain = `cli.relateby.dev`; enable Enforce HTTPS after DNS check passes (~15–30 min after DNS propagation)
+- [x] T033 [US4] Write CSS for `website/index.html`: CSS custom properties for light/dark theme, responsive grid, terminal code block styling, tab components — all inline or in a `<style>` block
+- [x] T034 [US4] Write `website/CNAME` containing exactly `cli.relateby.dev`
+- [x] T035 [US4] [P] Write `website/robots.txt` (allow all) and `website/sitemap.xml` (single URL: `https://cli.relateby.dev/`)
+- [x] T036 [US4] Extend `.github/workflows/update-website.yml` to also update the `<span id="current-version">` text in `website/index.html` with the release tag version before pushing to `gh-pages`
+- [x] T037 [US4] Enable GitHub Pages on `relateby/relate-cli`: Source = `gh-pages` branch; Custom domain = `cli.relateby.dev`; enable Enforce HTTPS after DNS check passes (~15–30 min after DNS propagation)
 - [ ] T038 [US4] Verify `https://cli.relateby.dev` loads; macOS tab is auto-selected on macOS; copy button pastes correct command; version badge shows current release; 375px mobile viewport is readable in both light and dark modes
 
 **Checkpoint**: Website live at `https://cli.relateby.dev`; version badge and install scripts update automatically within 5 minutes of a stable release.
@@ -122,11 +122,11 @@
 
 ### Implementation
 
-- [ ] T039 [US3] Write `distribution/npm/platforms.tsv`: 5 rows mapping target triple → npm package name → os value → cpu value
-- [ ] T040 [US3] Write `distribution/npm/cli-platform/package.json.tmpl`: platform package template with `%%NAME%%`, `%%VERSION%%`, `%%OS%%`, `%%CPU%%` substitution markers — file: `distribution/npm/cli-platform/package.json.tmpl`
-- [ ] T041 [US3] Write `distribution/npm/cli/package.json.tmpl`: wrapper package with `"name": "@relateby/cli"`, `"bin": {"relate": "bin/relate.js"}`, and `optionalDependencies` block referencing all 5 platform packages — file: `distribution/npm/cli/package.json.tmpl`
-- [ ] T042 [US3] Write `distribution/npm/cli/bin/relate.js`: Node.js shim using `require.resolve()` to locate the platform binary and `child_process.spawnSync()` to exec it; handles unsupported platform and missing optional package with clear error messages — file: `distribution/npm/cli/bin/relate.js`
-- [ ] T043 [US3] Write `.github/workflows/publish-npm.yml`: trigger on `release` event (type: `published`); download all 5 platform archives from GitHub Release; extract binaries; stamp `package.json.tmpl` files with release version; `npm publish` platform packages first then wrapper; use `--tag latest` for stable releases and `--tag next` for prereleases — file: `.github/workflows/publish-npm.yml`
+- [x] T039 [US3] Write `distribution/npm/platforms.tsv`: 5 rows mapping target triple → npm package name → os value → cpu value
+- [x] T040 [US3] Write `distribution/npm/cli-platform/package.json.tmpl`: platform package template with `%%NAME%%`, `%%VERSION%%`, `%%OS%%`, `%%CPU%%` substitution markers — file: `distribution/npm/cli-platform/package.json.tmpl`
+- [x] T041 [US3] Write `distribution/npm/cli/package.json.tmpl`: wrapper package with `"name": "@relateby/cli"`, `"bin": {"relate": "bin/relate.js"}`, and `optionalDependencies` block referencing all 5 platform packages — file: `distribution/npm/cli/package.json.tmpl`
+- [x] T042 [US3] Write `distribution/npm/cli/bin/relate.js`: Node.js shim using `require.resolve()` to locate the platform binary and `child_process.spawnSync()` to exec it; handles unsupported platform and missing optional package with clear error messages — file: `distribution/npm/cli/bin/relate.js`
+- [x] T043 [US3] Write `.github/workflows/publish-npm.yml`: trigger on `release` event (type: `published`); download all 5 platform archives from GitHub Release; extract binaries; stamp `package.json.tmpl` files with release version; `npm publish` platform packages first then wrapper; use `--tag latest` for stable releases and `--tag next` for prereleases — file: `.github/workflows/publish-npm.yml`
 - [ ] T044 [US3] Trigger a release and verify `npm i -g @relateby/cli` installs correctly on macOS (darwin-arm64); confirm only `@relateby/cli-darwin-arm64` is downloaded
 - [ ] T045 [US3] [P] Verify `npm i -g @relateby/cli` installs correctly on Linux x86_64; confirm only `@relateby/cli-linux-x64` is downloaded
 - [ ] T046 [US3] [P] Verify `npm i -g @relateby/cli --ignore-scripts` succeeds on macOS; confirm no postinstall script errors
@@ -140,9 +140,9 @@
 
 **Purpose**: Documentation, discoverability, and end-to-end validation.
 
-- [ ] T048 [P] Update `README.md` install section: add all four install channels with exact commands (`curl | bash`, `brew install`, `npm i -g`, `cargo install`) — file: `README.md`
-- [ ] T049 [P] Add macOS Gatekeeper workaround to `README.md` under the manual download note: `xattr -d com.apple.quarantine /path/to/relate` — file: `README.md`
-- [ ] T050 [P] Update `skills/relate/SKILL.md` install section to include the website URL `https://cli.relateby.dev` — file: `skills/relate/SKILL.md`
+- [x] T048 [P] Update `README.md` install section: add all four install channels with exact commands (`curl | bash`, `brew install`, `npm i -g`, `cargo install`) — file: `README.md`
+- [x] T049 [P] Add macOS Gatekeeper workaround to `README.md` under the manual download note: `xattr -d com.apple.quarantine /path/to/relate` — file: `README.md`
+- [x] T050 [P] Update `skills/relate/SKILL.md` install section to include the website URL `https://cli.relateby.dev` — file: `skills/relate/SKILL.md`
 - [ ] T051 Run end-to-end validation per `specs/005-packaging-distribution/quickstart.md`: fresh install via all four channels; verify `relate --version` matches latest release on each
 
 **Checkpoint**: All install paths documented; website URL in skill docs; end-to-end validation passes on all channels.
