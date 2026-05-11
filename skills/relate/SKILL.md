@@ -28,19 +28,39 @@ triggers:
 
 ## Step 1 — Install `relate`
 
-### From source (current)
+Full install instructions and the project website: **https://cli.relateby.dev**
+
+### Shell script (macOS / Linux — recommended)
+
+```bash
+curl -sSfL https://cli.relateby.dev/install.sh | bash
+```
+
+### Homebrew (macOS)
+
+```bash
+brew install relateby/tap/relate
+```
+
+### npm (all platforms)
+
+```bash
+npm i -g @relateby/cli
+```
+
+### cargo
+
+```bash
+cargo install relate
+```
+
+### From source
 
 ```bash
 git clone https://github.com/relateby/relate-cli
 cd relate-cli
 cargo build --release
 # binary at: ./target/release/relate
-```
-
-### Via cargo install (once published to crates.io)
-
-```bash
-cargo install relate
 ```
 
 ### Verify

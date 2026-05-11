@@ -4,13 +4,36 @@ CLI for working with `.cypher` and `.gram` files and Neo4j.
 
 ## Status
 
-Early development. Subcommands are stubs; see [`proposals/`](proposals/) for the RFC roadmap.
+Early development. See [`proposals/`](proposals/) for the RFC roadmap.
 
 ## Installation
 
+**macOS / Linux — shell script (recommended):**
 ```bash
-cargo install --path .
+curl -sSfL https://cli.relateby.dev/install.sh | bash
 ```
+
+**Homebrew (macOS):**
+```bash
+brew install relateby/tap/relate
+```
+
+**npm (all platforms):**
+```bash
+npm i -g @relateby/cli
+```
+
+**cargo (from source):**
+```bash
+cargo install relate
+```
+
+> **macOS Gatekeeper note:** If you manually download a binary from the GitHub Releases
+> page and macOS blocks it, run:
+> ```bash
+> xattr -d com.apple.quarantine /path/to/relate
+> ```
+> This is not needed for `curl | bash`, Homebrew, or npm installs.
 
 ## Usage
 

@@ -1,0 +1,23 @@
+{
+  "name": "@relateby/cli",
+  "version": "%%VERSION%%",
+  "description": "CLI for working with .cypher and .gram files and Neo4j",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/relateby/relate-cli"
+  },
+  "homepage": "https://cli.relateby.dev",
+  "keywords": ["cli", "cypher", "neo4j", "graph", "relate"],
+  "bin": {
+    "relate": "bin/relate.js"
+  },
+  "files": ["bin/relate.js"],
+  "optionalDependencies": {
+    "@relateby/cli-linux-x64":    "%%VERSION%%",
+    "@relateby/cli-linux-arm64":  "%%VERSION%%",
+    "@relateby/cli-darwin-x64":   "%%VERSION%%",
+    "@relateby/cli-darwin-arm64": "%%VERSION%%",
+    "@relateby/cli-win32-x64":    "%%VERSION%%"
+  }
+}
