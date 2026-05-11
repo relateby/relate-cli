@@ -48,7 +48,7 @@ jobs:
           mkdir -p /tmp/relate-archives
           gh release download "${{ steps.meta.outputs.tag }}" \
             --dir /tmp/relate-archives \
-            --pattern "relate-*.tar.gz" \
+            --pattern "relate-*.tar.xz" \
             --pattern "relate-*.zip"
 
       - name: Build and publish platform packages
@@ -73,8 +73,8 @@ jobs:
               unzip -j "/tmp/relate-archives/${ARCHIVE}" "*/relate.exe" -d "${PKG_DIR}/bin/"
               EXT=".exe"
             else
-              ARCHIVE="relate-${target}.tar.gz"
-              tar -xzf "/tmp/relate-archives/${ARCHIVE}" --strip-components=1 -C "${PKG_DIR}/bin/"
+              ARCHIVE="relate-${target}.tar.xz"
+              tar -xJf "/tmp/relate-archives/${ARCHIVE}" --strip-components=1 -C "${PKG_DIR}/bin/"
               chmod +x "${PKG_DIR}/bin/relate"
               EXT=""
             fi
