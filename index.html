@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>relate — Cypher and Neo4j in your terminal</title>
+  <meta name="description" content="relate is a CLI for working with .cypher and .gram files and Neo4j graph databases.">
+  <link rel="canonical" href="https://cli.relateby.dev/">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Fira+Code&display=swap" rel="stylesheet">
+  <style>
+
+    /* ─── Tokens ─────────────────────────────────────────────────── */
+    :root {
+      --bg:          #ffffff;
+      --bg-subtle:   #f4f5f7;
+      --bg-code:     #1a1b26;
+      --fg:          #111827;
+      --fg-muted:    #6b7280;
+      --fg-code:     #e2e8f0;
+      --accent:      #00b4d8;
+      --accent-dark: #0096c7;
+      --border:      #e5e7eb;
+      --tab-active:  #00b4d8;
+      --tab-hover:   #f0fbff;
+      --success:     #22c55e;
+      --radius:      6px;
+      --font-body:   "Public Sans", system-ui, sans-serif;
+      --font-mono:   "Fira Code", "Cascadia Code", monospace;
+      --max-w:       900px;
+    }
+    [data-theme="dark"] {
+      --bg:          #0f1117;
+      --bg-subtle:   #1a1d27;
+      --bg-code:     #0d0e16;
+      --fg:          #e2e8f0;
+      --fg-muted:    #94a3b8;
+      --fg-code:     #cdd6f4;
+      --border:      #2d3148;
+      --tab-hover:   #1e2235;
+    }
+
+    /* ─── Reset ──────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: 16px;
+      line-height: 1.6;
+      transition: background 0.2s, color 0.2s;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, pre { font-family: var(--font-mono); }
+
+    /* ─── Layout ─────────────────────────────────────────────────── */
+    .container { max-width: var(--max-w); margin: 0 auto; padding: 0 1.5rem; }
+
+    /* ─── Header ─────────────────────────────────────────────────── */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 0;
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 10;
+    }
+    header .inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .logo { font-weight: 700; font-size: 1.1rem; color: var(--fg); }
+    .logo span { color: var(--accent); }
+    nav { display: flex; align-items: center; gap: 1.5rem; }
+    nav a { font-size: 0.9rem; color: var(--fg-muted); }
+    nav a:hover { color: var(--fg); text-decoration: none; }
+    .theme-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      padding: 0.3rem 0.6rem;
+      color: var(--fg-muted);
+      font-size: 1rem;
+      line-height: 1;
+    }
+    .theme-btn:hover { color: var(--fg); border-color: var(--accent); }
+
+    /* ─── Hero ───────────────────────────────────────────────────── */
+    .hero {
+      padding: 4rem 0 3rem;
+      text-align: center;
+    }
+    .hero h1 {
+      font-size: clamp(1.8rem, 5vw, 2.8rem);
+      font-weight: 700;
+      line-height: 1.2;
+      margin-bottom: 1rem;
+    }
+    .hero h1 em { font-style: normal; color: var(--accent); }
+    .hero p {
+      font-size: 1.1rem;
+      color: var(--fg-muted);
+      max-width: 540px;
+      margin: 0 auto 0.75rem;
+    }
+    .version-badge {
+      display: inline-block;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.2rem 0.75rem;
+      font-size: 0.8rem;
+      font-family: var(--font-mono);
+      color: var(--fg-muted);
+      margin-bottom: 2rem;
+    }
+    .version-badge a { color: inherit; }
+
+    /* ─── Install Tabs ───────────────────────────────────────────── */
+    .install-box {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      max-width: 600px;
+      margin: 0 auto;
+      text-align: left;
+    }
+    .tab-bar {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .tab-bar::-webkit-scrollbar { display: none; }
+    .tab-btn {
+      flex-shrink: 0;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      padding: 0.6rem 1rem;
+      font-size: 0.85rem;
+      font-family: var(--font-body);
+      color: var(--fg-muted);
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+      white-space: nowrap;
+    }
+    .tab-btn:hover { background: var(--tab-hover); color: var(--fg); }
+    .tab-btn.active {
+      color: var(--tab-active);
+      border-bottom-color: var(--tab-active);
+      font-weight: 600;
+    }
+    .tab-panel { display: none; padding: 1rem; }
+    .tab-panel.active { display: block; }
+    .cmd-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--bg-code);
+      border-radius: var(--radius);
+      padding: 0.6rem 0.9rem;
+    }
+    .cmd-row .prompt { color: var(--accent); user-select: none; font-size: 0.9rem; }
+    .cmd-row code {
+      flex: 1;
+      color: var(--fg-code);
+      font-size: 0.9rem;
+      word-break: break-all;
+    }
+    .copy-btn {
+      background: none;
+      border: 1px solid #3d4166;
+      border-radius: 4px;
+      color: var(--fg-muted);
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 0.2rem 0.5rem;
+      white-space: nowrap;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .copy-btn:hover { border-color: var(--accent); color: var(--fg-code); }
+    .copy-btn.copied { color: var(--success); border-color: var(--success); }
+    .tab-note {
+      margin-top: 0.5rem;
+      font-size: 0.8rem;
+      color: var(--fg-muted);
+    }
+    .gatekeeper-note {
+      margin-top: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      background: rgba(250,204,21,0.08);
+      border-left: 3px solid #facc15;
+      border-radius: 0 var(--radius) var(--radius) 0;
+      font-size: 0.8rem;
+      color: var(--fg-muted);
+    }
+    .gatekeeper-note code { font-size: 0.8rem; color: #facc15; }
+
+    /* ─── Sections ───────────────────────────────────────────────── */
+    section { padding: 4rem 0; border-top: 1px solid var(--border); }
+    section h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 1.75rem;
+    }
+
+    /* ─── Quickstart ─────────────────────────────────────────────── */
+    .steps { display: flex; flex-direction: column; gap: 1.25rem; }
+    .step {
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+    .step-num {
+      flex-shrink: 0;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+    .step-body h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.35rem; }
+    .step-body p { font-size: 0.9rem; color: var(--fg-muted); margin-bottom: 0.5rem; }
+    .inline-cmd {
+      display: inline-block;
+      background: var(--bg-code);
+      border-radius: var(--radius);
+      padding: 0.35rem 0.75rem;
+    }
+    .inline-cmd code { font-size: 0.85rem; color: var(--fg-code); }
+
+    /* ─── Commands ───────────────────────────────────────────────── */
+    .cmd-tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .cmd-tab-btn {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      padding: 0.35rem 0.85rem;
+      font-size: 0.85rem;
+      font-family: var(--font-mono);
+      color: var(--fg-muted);
+      transition: all 0.15s;
+    }
+    .cmd-tab-btn:hover { border-color: var(--accent); color: var(--fg); }
+    .cmd-tab-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .cmd-tab-panel { display: none; }
+    .cmd-tab-panel.active { display: block; }
+    .code-block {
+      background: var(--bg-code);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      overflow-x: auto;
+    }
+    .code-block pre {
+      font-size: 0.875rem;
+      line-height: 1.6;
+      color: var(--fg-code);
+      white-space: pre;
+    }
+    .hl-comment { color: #565f89; }
+    .hl-cmd     { color: #7aa2f7; }
+    .hl-flag    { color: #9ece6a; }
+    .hl-str     { color: #9ecef0; }
+    .hl-kw      { color: #bb9af7; }
+    .hl-fn      { color: #e0af68; }
+
+    /* ─── Agent Skills ───────────────────────────────────────────── */
+    .skills-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .skill-card {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+    }
+    .skill-card h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.35rem; }
+    .skill-card p  { font-size: 0.83rem; color: var(--fg-muted); }
+
+    /* ─── Install Matrix ─────────────────────────────────────────── */
+    .matrix-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .matrix-table th {
+      text-align: left;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 2px solid var(--border);
+      color: var(--fg-muted);
+      font-weight: 600;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .matrix-table td {
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    .matrix-table tr:last-child td { border-bottom: none; }
+    .matrix-table code { font-size: 0.85rem; }
+
+    /* ─── Footer ─────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem 0;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--fg-muted);
+    }
+    footer a { color: var(--fg-muted); }
+
+    /* ─── Toast ──────────────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: var(--fg);
+      color: var(--bg);
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+      opacity: 0;
+      transform: translateY(0.5rem);
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+      z-index: 100;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    /* ─── Responsive ─────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      .hero { padding: 2.5rem 0 2rem; }
+      .step { flex-direction: column; }
+      .step-num { width: 1.75rem; height: 1.75rem; }
+      .matrix-table th:nth-child(2),
+      .matrix-table td:nth-child(2) { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══ Header ══════════════════════════════════════════════════════ -->
+<header>
+  <div class="container inner">
+    <span class="logo"><span>relate</span></span>
+    <nav>
+      <a href="#quickstart">Quickstart</a>
+      <a href="#commands">Commands</a>
+      <a href="#agents">Agents</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/relateby/relate-cli">GitHub</a>
+      <button class="theme-btn" id="themeToggle" title="Toggle theme" aria-label="Toggle light/dark theme">◑</button>
+    </nav>
+  </div>
+</header>
+
+<!-- ═══ Hero ════════════════════════════════════════════════════════ -->
+<section class="hero" id="home">
+  <div class="container">
+    <h1>Graph databases,<br><em>in your terminal.</em></h1>
+    <p>relate is a CLI for linting and parsing Cypher files, running parameterized queries against Neo4j, and exposing graph operations to AI agents via MCP.</p>
+    <div class="version-badge">
+      v<span id="current-version">0.1.0</span> &nbsp;·&nbsp;
+      <a href="https://github.com/relateby/relate-cli/releases">releases</a>
+    </div>
+
+    <div class="install-box">
+      <div class="tab-bar" id="installTabBar" role="tablist">
+        <button class="tab-btn" data-tab="macos"   role="tab">macOS</button>
+        <button class="tab-btn" data-tab="linux"   role="tab">Linux</button>
+        <button class="tab-btn" data-tab="windows" role="tab">Windows</button>
+        <button class="tab-btn" data-tab="brew"    role="tab">Homebrew</button>
+        <button class="tab-btn" data-tab="npm"     role="tab">npm</button>
+        <button class="tab-btn" data-tab="cargo"   role="tab">cargo</button>
+      </div>
+
+      <div class="tab-panel" id="tab-macos" role="tabpanel">
+        <div class="cmd-row">
+          <span class="prompt">$</span>
+          <code>curl -sSfL https://cli.relateby.dev/install.sh | bash</code>
+          <button class="copy-btn" data-copy="curl -sSfL https://cli.relateby.dev/install.sh | bash">copy</button>
+        </div>
+        <p class="tab-note">Installs to <code>~/.local/bin</code>. Apple Silicon and Intel both supported.</p>
+        <div class="gatekeeper-note">
+          Manually downloaded binary blocked by Gatekeeper?
+          Run: <code>xattr -d com.apple.quarantine /path/to/relate</code>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-linux" role="tabpanel">
+        <div class="cmd-row">
+          <span class="prompt">$</span>
+          <code>curl -sSfL https://cli.relateby.dev/install.sh | bash</code>
+          <button class="copy-btn" data-copy="curl -sSfL https://cli.relateby.dev/install.sh | bash">copy</button>
+        </div>
+        <p class="tab-note">Installs to <code>~/.local/bin</code>. x86_64 and aarch64 both supported.</p>
+      </div>
+
+      <div class="tab-panel" id="tab-windows" role="tabpanel">
+        <div class="cmd-row">
+          <span class="prompt">&gt;</span>
+          <code>powershell -c "irm https://cli.relateby.dev/install.ps1 | iex"</code>
+          <button class="copy-btn" data-copy='powershell -c "irm https://cli.relateby.dev/install.ps1 | iex"'>copy</button>
+        </div>
+        <p class="tab-note">Installs to <code>%LOCALAPPDATA%\Programs\relate</code>.</p>
+      </div>
+
+      <div class="tab-panel" id="tab-brew" role="tabpanel">
+        <div class="cmd-row">
+          <span class="prompt">$</span>
+          <code>brew install relateby/tap/relate</code>
+          <button class="copy-btn" data-copy="brew install relateby/tap/relate">copy</button>
+        </div>
+        <p class="tab-note">Upgrade with <code>brew upgrade relate</code>. Tap: <a href="https://github.com/relateby/homebrew-tap">relateby/homebrew-tap</a>.</p>
+      </div>
+
+      <div class="tab-panel" id="tab-npm" role="tabpanel">
+        <div class="cmd-row">
+          <span class="prompt">$</span>
+          <code>npm i -g @relateby/cli</code>
+          <button class="copy-btn" data-copy="npm i -g @relateby/cli">copy</button>
+        </div>
+        <p class="tab-note">Works with npm, pnpm, Bun, and <code>--ignore-scripts</code> CI environments.</p>
+      </div>
+
+      <div class="tab-panel" id="tab-cargo" role="tabpanel">
+        <div class="cmd-row">
+          <span class="prompt">$</span>
+          <code>cargo install relate</code>
+          <button class="copy-btn" data-copy="cargo install relate">copy</button>
+        </div>
+        <p class="tab-note">Compiles from source. Requires Rust 1.85+.</p>
+      </div>
+    </div><!-- .install-box -->
+  </div>
+</section>
+
+<!-- ═══ Quickstart ══════════════════════════════════════════════════ -->
+<section id="quickstart">
+  <div class="container">
+    <h2>Quickstart</h2>
+    <div class="steps">
+
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h3>Install relate</h3>
+          <p>Use any install method above. Verify with:</p>
+          <div class="inline-cmd"><code>relate --version</code></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h3>Lint a Cypher file</h3>
+          <p>Point <code>relate lint</code> at any <code>.cypher</code> file to get ariadne-style diagnostics:</p>
+          <div class="inline-cmd"><code>relate lint query.cypher</code></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h3>Connect to Neo4j</h3>
+          <p>Set credentials via environment variables or flags:</p>
+          <div class="inline-cmd"><code>export NEO4J_PASSWORD=secret</code></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h3>Run a query</h3>
+          <p>Execute parameterized Cypher and get results as a table:</p>
+          <div class="inline-cmd"><code>relate query "MATCH (n) RETURN n LIMIT 5"</code></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Commands ════════════════════════════════════════════════════ -->
+<section id="commands">
+  <div class="container">
+    <h2>Commands</h2>
+    <div class="cmd-tabs" role="tablist">
+      <button class="cmd-tab-btn active" data-cmd="lint"    role="tab">lint</button>
+      <button class="cmd-tab-btn"        data-cmd="parse"   role="tab">parse</button>
+      <button class="cmd-tab-btn"        data-cmd="query"   role="tab">query</button>
+      <button class="cmd-tab-btn"        data-cmd="apply"   role="tab">query --apply</button>
+      <button class="cmd-tab-btn"        data-cmd="mcp"     role="tab">mcp</button>
+    </div>
+
+    <div class="cmd-tab-panel active" id="cmd-lint">
+      <div class="code-block"><pre><span class="hl-comment"># Validate .cypher and .gram files</span>
+<span class="hl-cmd">relate lint</span> schema.cypher
+<span class="hl-cmd">relate lint</span> <span class="hl-flag">--json</span> queries/
+
+<span class="hl-comment"># Exit codes: 0 = valid, 1 = errors, 2 = warnings</span></pre></div>
+    </div>
+
+    <div class="cmd-tab-panel" id="cmd-parse">
+      <div class="code-block"><pre><span class="hl-comment"># Print the syntax tree of a Cypher or Gram file</span>
+<span class="hl-cmd">relate parse</span> schema.gram
+<span class="hl-cmd">relate parse</span> <span class="hl-flag">--json</span> query.cypher</pre></div>
+    </div>
+
+    <div class="cmd-tab-panel" id="cmd-query">
+      <div class="code-block"><pre><span class="hl-comment"># Run a Cypher query (credentials from env or flags)</span>
+<span class="hl-cmd">relate query</span> <span class="hl-str">"MATCH (n:Person) RETURN n.name LIMIT 10"</span>
+
+<span class="hl-comment"># Named parameters</span>
+<span class="hl-cmd">relate query</span> <span class="hl-flag">--param</span> <span class="hl-str">name=Alice</span> \
+  <span class="hl-str">"MATCH (n:Person {name: \$name}) RETURN n"</span>
+
+<span class="hl-comment"># Run a .cypher file from your query library</span>
+<span class="hl-cmd">relate query</span> find-person.cypher <span class="hl-flag">--param</span> name=Alice</pre></div>
+    </div>
+
+    <div class="cmd-tab-panel" id="cmd-apply">
+      <div class="code-block"><pre><span class="hl-comment"># Batch-execute a Cypher template against CSV rows</span>
+<span class="hl-cmd">relate query</span> create-person.cypher \
+  <span class="hl-flag">--apply</span> people.csv
+
+<span class="hl-comment"># Also supports JSON arrays and JSONL</span>
+<span class="hl-cmd">relate query</span> create-node.cypher <span class="hl-flag">--apply</span> nodes.jsonl
+
+<span class="hl-comment"># Control transaction batch size</span>
+<span class="hl-cmd">relate query</span> load.cypher <span class="hl-flag">--apply</span> data.csv <span class="hl-flag">--batch-size</span> 500</pre></div>
+    </div>
+
+    <div class="cmd-tab-panel" id="cmd-mcp">
+      <div class="code-block"><pre><span class="hl-comment"># Start an MCP stdio server exposing relate commands</span>
+<span class="hl-comment"># Add to your AI agent's MCP config:</span>
+{
+  <span class="hl-str">"mcpServers"</span>: {
+    <span class="hl-str">"relate"</span>: {
+      <span class="hl-str">"command"</span>: <span class="hl-str">"relate"</span>,
+      <span class="hl-str">"args"</span>: [<span class="hl-str">"mcp"</span>]
+    }
+  }
+}</pre></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Agent Skills ════════════════════════════════════════════════ -->
+<section id="agents">
+  <div class="container">
+    <h2>Agent Skills</h2>
+    <p style="color:var(--fg-muted);margin-bottom:1.5rem">relate ships with embedded skill bundles that teach AI coding agents how to use it — no extra configuration needed.</p>
+
+    <div class="skills-grid">
+      <div class="skill-card">
+        <h3>Claude Code</h3>
+        <p>Install the relate skill with <code>npx skills install relate</code> or add it to your project's <code>.claude/</code> directory.</p>
+      </div>
+      <div class="skill-card">
+        <h3>Cursor / Windsurf</h3>
+        <p>Place <code>skills/relate/SKILL.md</code> in your <code>.cursorrules</code> or agent context. Cursor picks it up automatically.</p>
+      </div>
+      <div class="skill-card">
+        <h3>Copilot / Other</h3>
+        <p>Skills follow the <a href="https://agentskills.io">agentskills.io</a> convention. Any agent that supports skill discovery works.</p>
+      </div>
+    </div>
+
+    <div class="inline-cmd">
+      <code>npx skills install relate</code>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Install Matrix ══════════════════════════════════════════════ -->
+<section id="install">
+  <div class="container">
+    <h2>All install methods</h2>
+    <table class="matrix-table">
+      <thead>
+        <tr>
+          <th>Method</th>
+          <th>Platforms</th>
+          <th>Command</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Shell script</td>
+          <td>macOS, Linux</td>
+          <td><code>curl -sSfL https://cli.relateby.dev/install.sh | bash</code></td>
+        </tr>
+        <tr>
+          <td>PowerShell</td>
+          <td>Windows</td>
+          <td><code>powershell -c "irm https://cli.relateby.dev/install.ps1 | iex"</code></td>
+        </tr>
+        <tr>
+          <td>Homebrew</td>
+          <td>macOS</td>
+          <td><code>brew install relateby/tap/relate</code></td>
+        </tr>
+        <tr>
+          <td>npm</td>
+          <td>All</td>
+          <td><code>npm i -g @relateby/cli</code></td>
+        </tr>
+        <tr>
+          <td>cargo</td>
+          <td>All (source)</td>
+          <td><code>cargo install relate</code></td>
+        </tr>
+        <tr>
+          <td>GitHub Releases</td>
+          <td>All (manual)</td>
+          <td><a href="https://github.com/relateby/relate-cli/releases">download archive</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══ Footer ══════════════════════════════════════════════════════ -->
+<footer>
+  <div class="container">
+    <p>
+      <a href="https://github.com/relateby/relate-cli">GitHub</a> &nbsp;·&nbsp;
+      <a href="https://github.com/relateby/relate-cli/releases">Releases</a> &nbsp;·&nbsp;
+      <a href="https://github.com/relateby/relate-cli/blob/main/LICENSE">MIT License</a>
+    </p>
+    <p style="margin-top:0.5rem">Built for Neo4j developers and AI agents.</p>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ── Theme ──────────────────────────────────────────────────────── */
+  const html = document.documentElement;
+  const themeBtn = document.getElementById("themeToggle");
+  const saved = localStorage.getItem("theme");
+
+  function applyTheme(t) {
+    html.setAttribute("data-theme", t);
+    themeBtn.textContent = t === "dark" ? "○" : "◑";
+  }
+
+  applyTheme(saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+
+  themeBtn.addEventListener("click", () => {
+    const next = html.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    applyTheme(next);
+    localStorage.setItem("theme", next);
+  });
+
+  /* ── OS detection ───────────────────────────────────────────────── */
+  function detectOS() {
+    const ua = navigator.userAgent.toLowerCase();
+    const platform = (navigator.userAgentData?.platform || navigator.platform || "").toLowerCase();
+    if (platform.includes("win") || ua.includes("windows")) return "windows";
+    if (platform.includes("mac") || ua.includes("macintosh") || ua.includes("mac os")) return "macos";
+    if (ua.includes("linux") || platform.includes("linux")) return "linux";
+    return "macos";
+  }
+
+  /* ── Install tabs ───────────────────────────────────────────────── */
+  function activateInstallTab(id) {
+    document.querySelectorAll("#installTabBar .tab-btn").forEach(b => {
+      b.classList.toggle("active", b.dataset.tab === id);
+    });
+    document.querySelectorAll(".tab-panel").forEach(p => {
+      p.classList.toggle("active", p.id === "tab-" + id);
+    });
+  }
+
+  document.querySelectorAll("#installTabBar .tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => activateInstallTab(btn.dataset.tab));
+  });
+
+  activateInstallTab(detectOS());
+
+  /* ── Command tabs ───────────────────────────────────────────────── */
+  document.querySelectorAll(".cmd-tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".cmd-tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".cmd-tab-panel").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("cmd-" + btn.dataset.cmd).classList.add("active");
+    });
+  });
+
+  /* ── Copy buttons ───────────────────────────────────────────────── */
+  const toast = document.getElementById("toast");
+  let toastTimer;
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove("show"), 2000);
+  }
+
+  document.querySelectorAll(".copy-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      navigator.clipboard.writeText(btn.dataset.copy).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = "copied!";
+        btn.classList.add("copied");
+        showToast("Copied to clipboard");
+        setTimeout(() => { btn.textContent = orig; btn.classList.remove("copied"); }, 2000);
+      }).catch(() => showToast("Copy failed — select and copy manually"));
+    });
+  });
+})();
+</script>
+</body>
+</html>
