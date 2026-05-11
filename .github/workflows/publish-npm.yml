@@ -23,6 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Determine version and dist-tag
         id: meta
@@ -54,6 +55,7 @@ jobs:
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           NPM_TAG: ${{ steps.meta.outputs.npm_tag }}
+          NODE_AUTH_TOKEN: ""
         run: |
           set -euo pipefail
           SCRIPT_DIR="distribution/npm"
@@ -94,6 +96,7 @@ jobs:
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           NPM_TAG: ${{ steps.meta.outputs.npm_tag }}
+          NODE_AUTH_TOKEN: ""
         run: |
           set -euo pipefail
           WORK_DIR="/tmp/relate-npm/__relateby__cli"
