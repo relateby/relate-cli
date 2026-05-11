@@ -626,20 +626,7 @@ fn parse_param_flag(s: &str) -> Result<(String, ParamValue)> {
         .ok_or_else(|| anyhow!("--param must be NAME=VALUE, got: {s:?}"))?;
     let name = s[..eq].to_string();
     let raw = &s[eq + 1..];
-
-    let value = if let Ok(i) = raw.parse::<i64>() {
-        ParamValue::Integer(i)
-    } else if let Ok(f) = raw.parse::<f64>() {
-        ParamValue::Float(f)
-    } else if raw == "true" {
-        ParamValue::Boolean(true)
-    } else if raw == "false" {
-        ParamValue::Boolean(false)
-    } else {
-        ParamValue::String(raw.to_string())
-    };
-
-    Ok((name, value))
+    Ok((name, coerce_param_value(raw)))
 }
 
 fn load_params_file(path: &Path) -> Result<ParamMap> {
@@ -1248,26 +1235,6 @@ fn coerce_param_value(raw: &str) -> ParamValue {
     }
 }
 
-/// Convert a JSON value into a `ParamValue`, preserving scalar types and
-/// wrapping nested objects / arrays / null as `ParamValue::Json`. Used by
-/// the JSON array and JSONL readers so types are not coerced through strings.
-fn param_value_from_json(v: serde_json::Value) -> ParamValue {
-    match v {
-        serde_json::Value::String(s) => ParamValue::String(s),
-        serde_json::Value::Bool(b) => ParamValue::Boolean(b),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                ParamValue::Integer(i)
-            } else if let Some(f) = n.as_f64() {
-                ParamValue::Float(f)
-            } else {
-                ParamValue::Json(serde_json::Value::Number(n))
-            }
-        }
-        other => ParamValue::Json(other),
-    }
-}
-
 /// Abstraction over CSV / JSON-array / JSONL data files for `--apply`.
 trait RowReader {
     /// Yields the next row as a parameter map, or None at EOF. A returned
@@ -1366,10 +1333,10 @@ impl JsonArrayRowReader {
             .map_err(|e| anyhow!("cannot parse JSON file '{}': {e}", path.display()))?;
         let arr = match value {
             serde_json::Value::Array(a) => a,
-            _ => {
+            other => {
                 return Err(anyhow!(
                     "--apply JSON file must be a top-level array of objects\n  Got: {} at {}\n  Hint: wrap the object in [ ... ] or use a JSONL file",
-                    json_top_level_kind(&value),
+                    json_top_level_kind(&other),
                     path.display()
                 ))
             }
@@ -1416,7 +1383,7 @@ impl RowReader for JsonArrayRowReader {
         };
         let map: ParamMap = obj
             .into_iter()
-            .map(|(k, v)| (k, param_value_from_json(v)))
+            .map(|(k, v)| (k, json_to_param_value(v)))
             .collect();
         Some(Ok(map))
     }
@@ -1483,7 +1450,7 @@ impl RowReader for JsonlRowReader {
             };
             let map: ParamMap = obj
                 .into_iter()
-                .map(|(k, v)| (k, param_value_from_json(v)))
+                .map(|(k, v)| (k, json_to_param_value(v)))
                 .collect();
             return Some(Ok(map));
         }
@@ -1576,6 +1543,24 @@ fn should_emit_progress(row_index_1based: usize, total: Option<usize>) -> bool {
 }
 
 /// Apply-mode dispatcher (Milestone 3 — US3 + US4 + US5).
+/// Extract `(code, message)` from a neo4rs error. The code is `Some(...)`
+/// only for `Error::Neo4j` (e.g. `Neo.ClientError.Schema.ConstraintValidationFailed`);
+/// for other variants the code is `None` and `message` is the Display string.
+fn neo4j_error_parts(e: &neo4rs::Error) -> (Option<String>, String) {
+    match e {
+        neo4rs::Error::Neo4j(err) => (Some(err.code().to_string()), err.message().to_string()),
+        other => (None, other.to_string()),
+    }
+}
+
+/// Result of an `--apply` run: collected per-row results plus the total row
+/// count. `results` is empty when JSON output was not requested, so the caller
+/// uses `row_count` for the human-readable summary.
+struct ApplyOutcome {
+    results: Vec<QueryResult>,
+    row_count: usize,
+}
+
 async fn execute_queue_apply(
     queue: &[StatementEntry],
     constants: &ParamMap,
@@ -1583,7 +1568,7 @@ async fn execute_queue_apply(
     mode: BatchMode,
     neo4j: &Neo4jArgs,
     json: bool,
-) -> Result<Vec<QueryResult>> {
+) -> Result<ApplyOutcome> {
     let password = neo4j.require_password()?;
     let graph = match Graph::new(&neo4j.uri, &neo4j.user, password) {
         Ok(g) => g,
@@ -1594,7 +1579,11 @@ async fn execute_queue_apply(
     };
 
     let total_hint = reader.total_hint();
+    // `results` is populated only when JSON output is requested. For
+    // non-JSON runs we skip the allocation to avoid O(rows × statements)
+    // memory pressure on large batches.
     let mut results: Vec<QueryResult> = Vec::new();
+    let mut row_count: usize = 0;
     let mut row_index: usize = 0;
     let mut rows_in_batch: usize = 0;
     let mut batches_committed: usize = 0;
@@ -1631,51 +1620,88 @@ async fn execute_queue_apply(
             effective.insert(k.clone(), v.clone());
         }
 
-        // Run every statement in the queue for this row, inside the active tx.
+        // Run every statement in the queue for this row inside the active tx.
+        // Buffer per-row results locally; only append to `results` once *all*
+        // statements for the row succeed. On any per-row failure, the partial
+        // row results are discarded so the JSON flush reflects only fully
+        // executed rows (spec US5 #2).
         let tx_ref = tx.as_mut().expect("tx was just opened");
-        let mut row_failed = false;
-        let mut failing_source: Option<StatementSource> = None;
-        let mut failing_error: Option<String> = None;
+        let mut row_results: Vec<QueryResult> = Vec::new();
+        let mut failure: Option<(StatementSource, neo4rs::Error)> = None;
 
-        for entry in queue {
+        'statements: for entry in queue {
             let is_write = matches!(
                 classify_statement(&entry.text),
                 Classification::Write { .. }
             );
             let q = bind_params(neo4rs::query(&entry.text), &effective);
 
-            match tx_ref.run(q).await {
-                Ok(_) => {
-                    results.push(QueryResult {
-                        source: entry.source.clone(),
-                        columns: Vec::new(),
-                        rows: Vec::new(),
-                        summary: QuerySummary::default(),
-                        is_write,
-                        row: Some(row_index),
-                    });
-                }
+            // Use the streaming API so read queries inside --apply surface
+            // their rows (M1 parity). Write queries simply yield no rows.
+            let mut stream = match tx_ref.execute(q).await {
+                Ok(s) => s,
                 Err(e) => {
-                    row_failed = true;
-                    failing_source = Some(entry.source.clone());
-                    failing_error = Some(e.to_string());
-                    break;
+                    failure = Some((entry.source.clone(), e));
+                    break 'statements;
                 }
+            };
+
+            let mut columns: Vec<String> = Vec::new();
+            let mut rows: Vec<Vec<serde_json::Value>> = Vec::new();
+            let mut first = true;
+            loop {
+                match stream.next(tx_ref.handle()).await {
+                    Ok(Some(row)) => {
+                        if first {
+                            columns = row.keys().into_iter().map(|k| k.to_string()).collect();
+                            first = false;
+                        }
+                        let vals: Vec<serde_json::Value> = columns
+                            .iter()
+                            .map(|col| {
+                                row.get::<serde_json::Value>(col.as_str())
+                                    .unwrap_or(serde_json::Value::Null)
+                            })
+                            .collect();
+                        rows.push(vals);
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        failure = Some((entry.source.clone(), e));
+                        break 'statements;
+                    }
+                }
+            }
+
+            if json {
+                row_results.push(QueryResult {
+                    source: entry.source.clone(),
+                    columns,
+                    rows,
+                    summary: QuerySummary::default(),
+                    is_write,
+                    row: Some(row_index),
+                });
             }
         }
 
-        if row_failed {
-            // Roll back the current transaction.
+        if let Some((failing_source, err)) = failure {
+            // Roll back the active transaction; partial row results are dropped.
             if let Some(t) = tx.take() {
                 let _ = t.rollback().await;
             }
-            // Render the failure per the contract.
-            let underlying = failing_error.unwrap_or_else(|| "unknown error".to_string());
-            let src = failing_source
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "<unknown>".to_string());
-            eprintln!("Error on row {}: query execution failed", row_index + 1);
-            eprintln!("  Source: {src}");
+            // Render the failure per the contract: primary line is the Neo4j
+            // error code when available, otherwise the underlying message.
+            let (code, message) = neo4j_error_parts(&err);
+            let primary = code.unwrap_or_else(|| {
+                message
+                    .lines()
+                    .next()
+                    .unwrap_or("query execution failed")
+                    .to_string()
+            });
+            eprintln!("Error on row {}: {primary}", row_index + 1);
+            eprintln!("  Source: {failing_source}");
             match mode {
                 BatchMode::Atomic => {
                     eprintln!("  Transaction rolled back. 0 rows committed.");
@@ -1690,16 +1716,23 @@ async fn execute_queue_apply(
                     );
                 }
             }
-            eprintln!("  Underlying: {underlying}");
+            eprintln!("  Underlying: {message}");
 
-            // Flush partial JSON output so consumers can still parse it (US5 #2).
+            // Flush partial JSON: only rows that completed all their
+            // statements appear here. The failing row's row_results are
+            // dropped by virtue of never being appended.
             if json {
                 print_json(&results);
             }
             std::process::exit(2);
         }
 
-        // Row succeeded.
+        // Row succeeded — commit results to the run-wide collection.
+        if json {
+            results.append(&mut row_results);
+        }
+        row_count += 1;
+
         let row_index_1based = row_index + 1;
         rows_in_batch += 1;
 
@@ -1758,20 +1791,11 @@ async fn execute_queue_apply(
             eprintln!("Error: failed to commit final transaction: {e}");
             std::process::exit(2);
         }
-        match mode {
-            BatchMode::Atomic => {
-                // Single atomic commit — no batch counters to advance.
-            }
-            BatchMode::Batched(_) => {
-                batches_committed += 1;
-                total_rows_committed += rows_in_batch;
-            }
-        }
     }
 
     let _ = total_rows_committed; // counters used only on failure paths
     let _ = batches_committed;
-    Ok(results)
+    Ok(ApplyOutcome { results, row_count })
 }
 
 // ── T013: Execute queue ───────────────────────────────────────────────────────
@@ -2168,19 +2192,13 @@ pub async fn run(mut args: QueryArgs, neo4j: Neo4jArgs) -> Result<()> {
         };
         preflight_params(&queue, &preflight_params_map);
 
-        let results =
+        let outcome =
             execute_queue_apply(&queue, &constants, reader, batch_mode, &neo4j, args.json).await?;
 
         if args.json {
-            print_json(&results);
+            print_json(&outcome.results);
         } else {
-            // Final summary — count is the number of (statement × row) results;
-            // the row count is results.len() / queue.len() when queue is non-empty.
-            let row_count = if queue.is_empty() {
-                0
-            } else {
-                results.len() / queue.len()
-            };
+            let row_count = outcome.row_count;
             match batch_mode {
                 BatchMode::Atomic => {
                     println!("{row_count} row(s) applied in 1 atomic transaction.");
@@ -2596,34 +2614,34 @@ mod tests {
     }
 
     #[test]
-    fn test_param_value_from_json_preserves_types() {
+    fn test_json_to_param_value_preserves_types() {
         use serde_json::json;
         assert!(matches!(
-            param_value_from_json(json!(42)),
+            json_to_param_value(json!(42)),
             ParamValue::Integer(42)
         ));
         assert!(matches!(
-            param_value_from_json(json!(2.5)),
+            json_to_param_value(json!(2.5)),
             ParamValue::Float(_)
         ));
         assert!(matches!(
-            param_value_from_json(json!(true)),
+            json_to_param_value(json!(true)),
             ParamValue::Boolean(true)
         ));
         assert!(matches!(
-            param_value_from_json(json!("hello")),
+            json_to_param_value(json!("hello")),
             ParamValue::String(ref s) if s == "hello"
         ));
         assert!(matches!(
-            param_value_from_json(json!(null)),
+            json_to_param_value(json!(null)),
             ParamValue::Json(serde_json::Value::Null)
         ));
         assert!(matches!(
-            param_value_from_json(json!([1, 2, 3])),
+            json_to_param_value(json!([1, 2, 3])),
             ParamValue::Json(serde_json::Value::Array(_))
         ));
         assert!(matches!(
-            param_value_from_json(json!({"k": 1})),
+            json_to_param_value(json!({"k": 1})),
             ParamValue::Json(serde_json::Value::Object(_))
         ));
     }

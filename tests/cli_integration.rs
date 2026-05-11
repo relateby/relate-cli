@@ -1300,4 +1300,176 @@ MATCH (p:Person {{name: $name}}) DETACH DELETE p"#
             "M1 schema must not include `row`; got: {arr:?}"
         );
     }
+
+    // Mid-row failure under --batch N: verifies (a) the primary error line
+    // surfaces the Neo4j error code, (b) partial-commit accounting is
+    // exact, and (c) the in-flight batch is rolled back while prior batches
+    // remain committed. Gated by NEO4J_PASSWORD.
+    #[test]
+    fn apply_batched_mid_row_failure_reports_neo4j_code_and_partial_commit() {
+        let password = match std::env::var("NEO4J_PASSWORD") {
+            Ok(p) if !p.is_empty() => p,
+            _ => return,
+        };
+
+        // 5 divisors; the third is 0 → ArithmeticError.
+        let csv = write_csv(&["d"], &[&["1"], &["2"], &["0"], &["4"], &["5"]]);
+        // The query intentionally fails when $d = 0.
+        let q = write_cypher("CREATE (n:RelateFailTest {value: 100 / toInteger($d)})");
+
+        // Cleanup any leftovers.
+        cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "MATCH (n:RelateFailTest) DETACH DELETE n",
+                "--write",
+            ])
+            .assert()
+            .success();
+
+        // --batch 2: rows 1+2 commit (batch 1), row 3 fails inside batch 2 →
+        // 2 committed, 1 rolled back, rows 4-5 never attempted.
+        let out = cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                q.path().to_str().unwrap(),
+                "--apply",
+                csv.path().to_str().unwrap(),
+                "--batch",
+                "2",
+                "--write",
+            ])
+            .assert()
+            .failure()
+            .code(2)
+            .get_output()
+            .clone();
+
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("Neo.ClientError.Statement.ArithmeticError"),
+            "stderr should name the Neo4j error code on the primary error line; got:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("Error on row 3:"),
+            "stderr should identify the failing row (1-based); got:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("2 rows committed (1 batch)") || stderr.contains("2 rows committed"),
+            "stderr should report 2 rows committed across 1 batch; got:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("Underlying:"),
+            "stderr should include an Underlying: line with the error message; got:\n{stderr}"
+        );
+
+        // Verify the database state: exactly 2 RelateFailTest nodes survive
+        // (rows 1 and 2 from the first batch); row 3 was rolled back.
+        let count_out = cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "MATCH (n:RelateFailTest) RETURN count(n) AS c",
+                "--json",
+            ])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        let parsed: serde_json::Value = serde_json::from_slice(&count_out).expect("valid JSON");
+        let c = parsed[0]["rows"][0]["c"].as_u64().expect("count value");
+        assert_eq!(c, 2, "expected exactly 2 committed rows after batch 1");
+
+        // Cleanup.
+        cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "MATCH (n:RelateFailTest) DETACH DELETE n",
+                "--write",
+            ])
+            .assert()
+            .success();
+    }
+
+    // Mid-row failure under --atomic: full rollback, zero committed rows.
+    // Gated by NEO4J_PASSWORD.
+    #[test]
+    fn apply_atomic_mid_row_failure_rolls_back_everything() {
+        let password = match std::env::var("NEO4J_PASSWORD") {
+            Ok(p) if !p.is_empty() => p,
+            _ => return,
+        };
+
+        let csv = write_csv(&["d"], &[&["1"], &["2"], &["0"], &["4"]]);
+        let q = write_cypher("CREATE (n:RelateAtomicFail {value: 100 / toInteger($d)})");
+
+        cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "MATCH (n:RelateAtomicFail) DETACH DELETE n",
+                "--write",
+            ])
+            .assert()
+            .success();
+
+        let out = cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                q.path().to_str().unwrap(),
+                "--apply",
+                csv.path().to_str().unwrap(),
+                "--atomic",
+                "--write",
+            ])
+            .assert()
+            .failure()
+            .code(2)
+            .get_output()
+            .clone();
+
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("Neo.ClientError.Statement.ArithmeticError"),
+            "stderr should name the Neo4j error code; got:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("Transaction rolled back. 0 rows committed."),
+            "stderr should report full rollback; got:\n{stderr}"
+        );
+
+        // Verify zero committed rows.
+        let count_out = cmd()
+            .args([
+                "query",
+                "--password",
+                &password,
+                "-e",
+                "MATCH (n:RelateAtomicFail) RETURN count(n) AS c",
+                "--json",
+            ])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        let parsed: serde_json::Value = serde_json::from_slice(&count_out).expect("valid JSON");
+        let c = parsed[0]["rows"][0]["c"].as_u64().expect("count value");
+        assert_eq!(c, 0, "atomic failure must leave zero rows committed");
+    }
 }
