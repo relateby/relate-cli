@@ -73,9 +73,8 @@ Type coercion for `--param` and map literal values:
 - `null` in map literal → null
 - Anything else → string
 
-**Note**: Cypher map literal keys must be unquoted identifiers (`{name: "Alice"}`).
-JSON-style quoted keys (`{"name": "Alice"}`) are not valid Cypher map syntax.
-For quoted-key JSON, use `--params file.json` instead.
+**Note**: Both Cypher map syntax (`{name: "Alice"}`) and JSON-style quoted keys
+(`{"name": "Alice"}`) are accepted in the positional map literal.
 
 **Checkpoint**: All `$parameter` references in your statement have supplied values.
 Missing params abort with exit code 1 before any connection is attempted.
@@ -244,7 +243,7 @@ Workflow is complete when:
 | "I'll just use `cypher-shell` instead." | `relate query` adds preflight linting, write protection, query libraries, and JSON output. Use it for file-based and scripting workflows. Use `cypher-shell` only for its interactive REPL or transaction control. |
 | "The connection failed so I'll retry with different credentials." | Check `NEO4J_PASSWORD` env var or `--password` flag. `relate query` never prompts interactively. |
 | "It's a `CALL` procedure so it's read-only." | `CALL` is conservatively classified as Write because many procedures mutate the graph. Add `--write` to avoid the preflight abort. |
-| "I can use JSON-style quoted keys in the map literal." | Cypher map syntax requires unquoted identifier keys: `{name: "Alice"}`. Use `--params file.json` for quoted-key JSON input. |
+| "I need quoted keys, so I'll use `--params file.json` instead." | The positional map literal accepts both `{name: "Alice"}` and `{"name": "Alice"}`. Use `--params` only when parameters live in a separate JSON file. |
 | "I don't need semicolons between statements in a .cypher file." | The tree-sitter-cypher parser requires `;` as a statement separator. Without it, adjacent statements are parsed as an error. Always use `;`. |
 
 ---

@@ -57,22 +57,25 @@ in the codebase.
 **Decision**: Parse the `[PARAMS]` positional argument by wrapping it in a
 synthetic `RETURN` statement (`RETURN <input>`) and running the cypher parser,
 then extracting the first `map_literal` child of the `return_clause`. Walk the
-`map_literal` subtree to extract key-value pairs into a `ParamMap`.
+`map_literal` subtree to extract key-value pairs into a `ParamMap`. If the
+cypher parser yields no `map_literal` (e.g. JSON-style quoted keys, which
+tree-sitter-cypher does not accept as map keys), fall back to `serde_json`
+parsing and convert the resulting JSON object into a `ParamMap`.
 
-**Rationale**: The cypher grammar already has a `map_literal` node kind with
-named key-value structure. Reusing the existing cypher parser avoids a second
-custom parser and handles both unquoted keys (`{name: "Alice"}`) and
-JSON-style quoted keys (`{"name": "Alice"}`), since both are valid in Cypher
-map expressions. The `RETURN <map>` wrapping trick gives us a fully parseable
-statement.
+**Rationale**: The cypher grammar's `map_literal` node covers the common
+unquoted-identifier form (`{name: "Alice"}`). For JSON-style quoted keys
+(`{"name": "Alice"}`) — required by spec US2.4 — a JSON fallback is the
+simplest robust path; both cypher map syntax and JSON object syntax are
+accepted from a single positional argument. The `RETURN <map>` wrapping trick
+gives us a fully parseable cypher statement when the input is cypher-shaped.
 
-**Node structure** (tree-sitter-cypher):
+**Node structure** (tree-sitter-cypher cypher-shaped path):
 
 ```
 map_literal
   map_entry*
-    identifier | string_literal  (key)
-    expression                   (value)
+    identifier  (key)
+    expression  (value)
 ```
 
 **Supported value types** for automatic coercion in map literals:

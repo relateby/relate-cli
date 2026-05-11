@@ -134,7 +134,7 @@ A developer whose query files live somewhere other than `./cypher/` wants to spe
 ## Assumptions
 
 - The default query directory is `./cypher/` relative to the current working directory; no project-level config file is introduced in this milestone (deferred to a future RFC).
-- Cypherdoc parsing uses the `cypherdoc` sub-grammar already present in `tree-sitter-cypher 0.2`; no new grammar dependency is introduced.
+- Cypherdoc parsing uses the `tree-sitter-cypherdoc` crate, added as a new grammar dependency alongside `tree-sitter-cypher`.
 - `--params <FILE>` (JSON file) and the positional `[PARAMS]` map are mutually exclusive; mixing them is an error surfaced before any query execution.
 - Statement names within a single file are expected to be unique; behavior for duplicate names is undefined and left to a future lint rule.
 - The `--cypher-dir` override is per-invocation only; a persistent project-level default is out of scope for this milestone.

@@ -331,6 +331,7 @@ fn lint_no_strict_warning_exits_zero() {
 
 mod query {
     use assert_cmd::Command;
+    use predicates::prelude::PredicateBooleanExt;
     use predicates::str::contains;
     use std::io::Write;
     use tempfile::NamedTempFile;
@@ -546,6 +547,37 @@ MATCH (p:Person {{name: $name}}) DETACH DELETE p"#
         assert!(out.contains("delete"), "should contain 'delete': {out}");
     }
 
+    // --describe on a file/stmt address must not duplicate the statement name
+    // in the source label (e.g. "movies.cypher (upsert) (upsert)").
+    #[test]
+    fn describe_library_statement_does_not_duplicate_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("movies.cypher"),
+            "/**\n * upsert\n * @param {string} title - Movie title\n */\n\
+             MERGE (m:Movie {title: $title}) RETURN m;",
+        )
+        .unwrap();
+
+        let output = cmd()
+            .args([
+                "query",
+                "--describe",
+                "--cypher-dir",
+                dir.path().to_str().unwrap(),
+                "movies/upsert",
+            ])
+            .assert()
+            .success()
+            .code(0);
+        let out = std::str::from_utf8(&output.get_output().stdout).unwrap();
+        assert!(
+            !out.contains("(upsert) (upsert)"),
+            "label should not duplicate stmt name: {out}"
+        );
+        assert!(out.contains("upsert"), "should mention 'upsert': {out}");
+    }
+
     // T020: --describe does not produce JSON output (always human-readable)
     #[test]
     fn describe_ignores_json_flag() {
@@ -603,6 +635,44 @@ MATCH (p:Person {{name: $name}}) DETACH DELETE p"#
             .failure()
             .code(1)
             .stderr(contains("nonexistent_query"));
+    }
+
+    // -e with a trailing positional map literal: clap binds the positional to
+    // [QUERY] by default, but with --expr present the disambiguation in run()
+    // re-routes a leading-`{` positional to [PARAMS]. The test passes if the
+    // mutex check is NOT triggered (would say "QUERY and --expr are mutually
+    // exclusive") and we instead reach the write-protection short-circuit.
+    #[test]
+    fn expr_with_positional_map_routes_to_params_not_query() {
+        cmd()
+            .args([
+                "query",
+                "-e",
+                "CREATE (n:Test {name: $name})",
+                "{name: \"Alice\"}",
+            ])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("write operation requires --write flag"))
+            .stderr(contains("mutually exclusive").not());
+    }
+
+    // Same with quoted-key (JSON-style) map — also reaches write-protection.
+    #[test]
+    fn expr_with_positional_quoted_key_map_is_accepted() {
+        cmd()
+            .args([
+                "query",
+                "-e",
+                "CREATE (n:Test {name: $name})",
+                "{\"name\": \"Alice\"}",
+            ])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(contains("write operation requires --write flag"))
+            .stderr(contains("mutually exclusive").not());
     }
 
     // [PARAMS] and --params mutual exclusion → exits 1

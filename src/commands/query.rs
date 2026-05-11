@@ -379,6 +379,7 @@ fn build_queue_file(path: &Path) -> Result<Vec<StatementEntry>> {
 fn filter_by_stmt_name(
     entries: Vec<StatementEntry>,
     stmt_name: &str,
+    file: &Path,
 ) -> Result<Vec<StatementEntry>> {
     let available: Vec<String> = entries
         .iter()
@@ -396,8 +397,9 @@ fn filter_by_stmt_name(
         } else {
             available.join(", ")
         };
+        let path = file.display();
         return Err(anyhow!(
-            "statement '{stmt_name}' not found\n  Available statements: {names}\n  \
+            "statement '{stmt_name}' not found in {path}\n  Available statements: {names}\n  \
              Hint: use 'relate query --describe <file>' to see full documentation"
         ));
     }
@@ -441,7 +443,7 @@ fn open_library_entries(name: &QueryName, cypher_dir: &Path) -> Result<Vec<State
                 std::process::exit(1);
             }
             let entries = build_queue_file(file)?;
-            let filtered = match filter_by_stmt_name(entries, stmt_name) {
+            let filtered = match filter_by_stmt_name(entries, stmt_name, file) {
                 Ok(f) => f,
                 Err(e) => {
                     eprintln!("Error: {e}");
@@ -649,9 +651,9 @@ fn load_params_file(path: &Path) -> Result<ParamMap> {
 
 /// Parse a Cypher map literal string like `{name: "Alice", age: 30}` into a ParamMap.
 ///
-/// Wraps the input in `RETURN <input>` and walks the tree-sitter AST.
-/// Keys must be unquoted Cypher identifiers (standard Cypher map syntax).
-/// Map entry structure: property_key_value → identifier (key) + expression → value_node.
+/// Accepts both Cypher map syntax (`{name: "Alice"}`) and JSON-style quoted keys
+/// (`{"name": "Alice"}`) per spec US2.4. Cypher parse is attempted first; if no
+/// map_literal is recognised, the input is parsed as a JSON object as a fallback.
 fn parse_map_literal(s: &str) -> Result<ParamMap> {
     let wrapped = format!("RETURN {s}");
 
@@ -680,12 +682,16 @@ fn parse_map_literal(s: &str) -> Result<ParamMap> {
         None
     }
 
-    let map_node = find_map_literal(tree.root_node()).ok_or_else(|| {
-        anyhow!(
-            "invalid parameter map — expected a Cypher map literal like '{{name: \"Alice\", age: 30}}'\n  \
-             Got: {s:?}\n  Hint: use --param name=value for key=value syntax"
-        )
-    })?;
+    let Some(map_node) = find_map_literal(tree.root_node()) else {
+        // Cypher parse didn't yield a map (e.g. JSON-style quoted keys, which
+        // tree-sitter-cypher rejects). Fall back to JSON object parsing.
+        return parse_json_object_as_param_map(s).map_err(|_| {
+            anyhow!(
+                "invalid parameter map — expected a Cypher map literal like '{{name: \"Alice\", age: 30}}'\n  \
+                 Got: {s:?}\n  Hint: use --param name=value for key=value syntax"
+            )
+        });
+    };
 
     let mut result = ParamMap::new();
     let mut cursor = map_node.walk();
@@ -716,6 +722,34 @@ fn parse_map_literal(s: &str) -> Result<ParamMap> {
     }
 
     Ok(result)
+}
+
+/// Parse `s` as a JSON object and convert to ParamMap, preserving scalar types
+/// (Number→Integer/Float, Bool, String) and wrapping nested objects/arrays/null
+/// as ParamValue::Json.
+fn parse_json_object_as_param_map(s: &str) -> Result<ParamMap> {
+    let obj: serde_json::Map<String, serde_json::Value> = serde_json::from_str(s)?;
+    Ok(obj
+        .into_iter()
+        .map(|(k, v)| (k, json_to_param_value(v)))
+        .collect())
+}
+
+fn json_to_param_value(v: serde_json::Value) -> ParamValue {
+    match v {
+        serde_json::Value::String(s) => ParamValue::String(s),
+        serde_json::Value::Bool(b) => ParamValue::Boolean(b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                ParamValue::Integer(i)
+            } else if let Some(f) = n.as_f64() {
+                ParamValue::Float(f)
+            } else {
+                ParamValue::Json(serde_json::Value::Number(n))
+            }
+        }
+        other => ParamValue::Json(other),
+    }
 }
 
 fn coerce_map_value(node: tree_sitter::Node, src: &[u8]) -> Result<ParamValue> {
@@ -1093,11 +1127,17 @@ fn print_describe(entries: &[StatementEntry]) {
     const RULER_WIDTH: usize = 78;
 
     for entry in entries {
-        // Use "source (doc_name)" when the entry has a cypherdoc name; otherwise just source.
-        let label = if let Some(doc) = &entry.doc {
-            format!("{} ({})", entry.source, doc.name)
-        } else {
-            entry.source.to_string()
+        // Use "source (doc_name)" when the entry has a cypherdoc name and the
+        // source doesn't already include the statement name. LibraryStatement's
+        // Display already renders as "path (stmt_name)", so appending doc.name
+        // would duplicate it (e.g. "movies.cypher (upsert) (upsert)").
+        let label = match (&entry.doc, &entry.source) {
+            // LibraryStatement's Display already includes the stmt name as "path (stmt_name)";
+            // appending doc.name would duplicate it (e.g. "movies.cypher (upsert) (upsert)").
+            (Some(_), StatementSource::LibraryStatement { .. }) | (None, _) => {
+                entry.source.to_string()
+            }
+            (Some(doc), _) => format!("{} ({})", entry.source, doc.name),
         };
         let ruler_fill = RULER_WIDTH.saturating_sub(label.len() + 4);
         let ruler: String = "─".repeat(ruler_fill);
@@ -1386,7 +1426,20 @@ fn print_json(results: &[QueryResult]) {
 
 // ── T015: Entry point ─────────────────────────────────────────────────────────
 
-pub async fn run(args: QueryArgs, neo4j: Neo4jArgs) -> Result<()> {
+pub async fn run(mut args: QueryArgs, neo4j: Neo4jArgs) -> Result<()> {
+    // Disambiguate `-e '...' '{...}'`: clap binds the trailing positional to
+    // [QUERY], but with --expr present the user means it for [PARAMS].
+    // A leading `{` is unambiguous — bare query names and file paths can't start with one.
+    if !args.expr.is_empty()
+        && args.params_map.is_none()
+        && args
+            .query
+            .as_deref()
+            .is_some_and(|q| q.trim_start().starts_with('{'))
+    {
+        args.params_map = args.query.take();
+    }
+
     // Mutual exclusion: [QUERY] and -e are mutually exclusive
     if args.query.is_some() && !args.expr.is_empty() {
         eprintln!("Error: [QUERY] and --expr (-e) are mutually exclusive");
@@ -1614,10 +1667,13 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_map_literal_quoted_keys_not_valid_cypher() {
-        // Quoted keys like {"name": "Alice"} are JSON syntax, not Cypher map syntax.
-        // tree-sitter-cypher only supports unquoted identifier keys.
-        assert!(parse_map_literal(r#"{"name": "Alice", "age": 30}"#).is_err());
+    fn test_parse_map_literal_quoted_keys_accepted() {
+        // Spec US2.4: JSON-style quoted keys parse identically to unquoted keys.
+        // tree-sitter-cypher rejects quoted-key maps, so parse_map_literal falls
+        // back to JSON parsing for this shape.
+        let map = parse_map_literal(r#"{"name": "Alice", "age": 30}"#).unwrap();
+        assert!(matches!(map.get("name"), Some(ParamValue::String(s)) if s == "Alice"));
+        assert!(matches!(map.get("age"), Some(ParamValue::Integer(30))));
     }
 
     #[test]
@@ -1709,7 +1765,8 @@ mod tests {
     #[test]
     fn test_filter_by_stmt_name_hit() {
         let entries = vec![make_entry("upsert"), make_entry("delete")];
-        let result = filter_by_stmt_name(entries, "upsert").unwrap();
+        let result =
+            filter_by_stmt_name(entries, "upsert", Path::new("./cypher/person.cypher")).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].doc.as_ref().unwrap().name, "upsert");
     }
@@ -1717,11 +1774,16 @@ mod tests {
     #[test]
     fn test_filter_by_stmt_name_miss_lists_available() {
         let entries = vec![make_entry("upsert"), make_entry("delete")];
-        let err = filter_by_stmt_name(entries, "by_age").unwrap_err();
+        let path = Path::new("./cypher/person.cypher");
+        let err = filter_by_stmt_name(entries, "by_age", path).unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("by_age"),
             "error should mention the name: {msg}"
+        );
+        assert!(
+            msg.contains("./cypher/person.cypher"),
+            "error should mention the file path: {msg}"
         );
         assert!(msg.contains("upsert"), "error should list available: {msg}");
         assert!(msg.contains("delete"), "error should list available: {msg}");
