@@ -3,8 +3,8 @@
 /.parcel-cache/
 
 # Tool-managed directories
-.claude/
-.specify/
+.claude/worktrees/
+.claude/settings.local.json
 
 # Editor and OS artifacts
 .DS_Store
