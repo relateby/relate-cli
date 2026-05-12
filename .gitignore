@@ -1,4 +1,6 @@
 /target/
+/dist/
+/.parcel-cache/
 
 # Tool-managed directories
 .claude/
