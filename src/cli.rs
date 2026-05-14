@@ -14,7 +14,12 @@ use std::path::PathBuf;
                   relate query -e 'MATCH (n) RETURN count(n) AS total'\n  \
                   relate query find_person.cypher --param name=Alice\n  \
                   relate write nodes.gram\n  \
-                  relate mcp ./queries/"
+                  relate mcp ./queries/\n\n\
+                  External subcommands:\n  \
+                  Unknown subcommand names are delegated to `relate-<name>` binaries on PATH.\n  \
+                  Example: `relate csp solve foo.csp.gram` → executes `relate-csp solve foo.csp.gram`\n  \
+                  Global flags (--uri, --user, --password) are forwarded as RELATE_URI, RELATE_USER,\n  \
+                  and RELATE_PASSWORD environment variables."
 )]
 pub struct Cli {
     #[command(flatten)]
@@ -65,6 +70,9 @@ pub enum Commands {
     Read(ReadArgs),
     /// Host a directory of parameterized .cypher files as MCP tools (stdio)
     Mcp(McpArgs),
+    /// Delegate to an external `relate-<name>` binary on PATH
+    #[command(external_subcommand)]
+    External(Vec<String>),
 }
 
 /// Language selection for --expr and stdin input.
