@@ -1473,3 +1473,142 @@ MATCH (p:Person {{name: $name}}) DETACH DELETE p"#
         assert_eq!(c, 0, "atomic failure must leave zero rows committed");
     }
 }
+
+// ── External subcommand dispatch ──────────────────────────────────────────────
+
+#[cfg(unix)]
+mod external_subcommand {
+    use assert_cmd::Command;
+    use predicates::prelude::PredicateBooleanExt;
+    use predicates::str::contains;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn make_stub_script(dir: &tempfile::TempDir, name: &str, body: &str) {
+        let path = dir.path().join(name);
+        fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("write stub");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+            .expect("chmod stub");
+    }
+
+    fn with_stub_path(dir: &tempfile::TempDir) -> String {
+        let current = std::env::var("PATH").unwrap_or_default();
+        format!("{}:{current}", dir.path().display())
+    }
+
+    // T006 — delegates output to external binary
+    #[test]
+    fn delegates_to_external_binary() {
+        let dir = tempfile::TempDir::new().unwrap();
+        make_stub_script(&dir, "relate-hello", "echo 'hello from stub'");
+        Command::cargo_bin("relate")
+            .unwrap()
+            .env("PATH", with_stub_path(&dir))
+            .arg("hello")
+            .assert()
+            .success()
+            .stdout(contains("hello from stub"));
+    }
+
+    // T007 — propagates exit code 0
+    #[test]
+    fn propagates_exit_code_zero() {
+        let dir = tempfile::TempDir::new().unwrap();
+        make_stub_script(&dir, "relate-hello", "exit 0");
+        Command::cargo_bin("relate")
+            .unwrap()
+            .env("PATH", with_stub_path(&dir))
+            .arg("hello")
+            .assert()
+            .code(0);
+    }
+
+    // T008 — propagates non-zero exit code
+    #[test]
+    fn propagates_nonzero_exit_code() {
+        let dir = tempfile::TempDir::new().unwrap();
+        make_stub_script(&dir, "relate-hello", "exit 42");
+        Command::cargo_bin("relate")
+            .unwrap()
+            .env("PATH", with_stub_path(&dir))
+            .arg("hello")
+            .assert()
+            .code(42);
+    }
+
+    // T009 — built-in subcommand takes precedence over external stub
+    #[test]
+    fn builtin_takes_precedence_over_external() {
+        let dir = tempfile::TempDir::new().unwrap();
+        make_stub_script(&dir, "relate-lint", "echo STUB");
+        Command::cargo_bin("relate")
+            .unwrap()
+            .env("PATH", with_stub_path(&dir))
+            .arg("lint")
+            .arg(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("fixtures/valid.cypher"),
+            )
+            .assert()
+            .success()
+            .stdout(predicates::str::contains("STUB").not());
+    }
+
+    // T011 — missing binary exits 127 with binary name in stderr
+    #[test]
+    fn not_found_exits_127_with_binary_name() {
+        Command::cargo_bin("relate")
+            .unwrap()
+            .arg("nonexistent-subcommand")
+            .assert()
+            .code(127)
+            .stderr(contains("relate-nonexistent-subcommand"));
+    }
+
+    // T012 — non-executable binary exits 126
+    #[test]
+    fn not_executable_exits_126_with_message() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("relate-hello");
+        fs::write(&path, "#!/bin/sh\necho hi\n").expect("write file");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644))
+            .expect("set non-executable");
+        Command::cargo_bin("relate")
+            .unwrap()
+            .env("PATH", with_stub_path(&dir))
+            .arg("hello")
+            .assert()
+            .code(126)
+            .stderr(contains("not executable"));
+    }
+
+    // T014 — global flags forwarded as RELATE_* env vars
+    #[test]
+    fn forwards_global_flags_as_env_vars() {
+        let dir = tempfile::TempDir::new().unwrap();
+        make_stub_script(&dir, "relate-echo-env", "env | sort");
+        Command::cargo_bin("relate")
+            .unwrap()
+            .env("PATH", with_stub_path(&dir))
+            .args(["--uri", "bolt://host:7687", "--user", "tester", "echo-env"])
+            .assert()
+            .success()
+            .stdout(contains("RELATE_URI=bolt://host:7687"))
+            .stdout(contains("RELATE_USER=tester"));
+    }
+
+    // T015 — calling environment is inherited unchanged
+    #[test]
+    fn inherits_calling_environment_unchanged() {
+        let dir = tempfile::TempDir::new().unwrap();
+        make_stub_script(&dir, "relate-echo-env", "env | sort");
+        Command::cargo_bin("relate")
+            .unwrap()
+            .env("PATH", with_stub_path(&dir))
+            .env("NEO4J_PASSWORD", "secret")
+            .arg("echo-env")
+            .assert()
+            .success()
+            .stdout(contains("NEO4J_PASSWORD=secret"));
+    }
+}

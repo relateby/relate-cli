@@ -69,7 +69,7 @@ cargo build --release
 relate --help
 ```
 
-Expected: help text listing `lint`, `parse`, `query`, `write`, `read`, `mcp` subcommands.
+Expected: help text listing `lint`, `parse`, `query`, `write`, `read`, `mcp` subcommands and a note about external subcommand delegation.
 
 **Checkpoint**: `relate --help` exits 0 and lists subcommands.
 
@@ -99,6 +99,7 @@ Expected: help text listing `lint`, `parse`, `query`, `write`, `read`, `mcp` sub
 | Write Gram graph data to Neo4j | `relate write` | *(skill coming soon)* |
 | Query Neo4j and save as Gram | `relate read` | *(skill coming soon)* |
 | Expose Cypher files as MCP tools | `relate mcp` | *(skill coming soon)* |
+| Invoke an ecosystem extension | `relate <name>` | *(extension's own skill)* |
 
 **Checkpoint**: You have identified the sub-skill to load. Load it now before proceeding.
 

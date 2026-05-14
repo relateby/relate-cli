@@ -38,5 +38,11 @@ async fn main() -> Result<()> {
         Commands::Write(args) => commands::write::run(args, cli.neo4j).await,
         Commands::Read(args) => commands::read::run(args, cli.neo4j).await,
         Commands::Mcp(args) => commands::mcp::run(args).await,
+        Commands::External(args) => {
+            let (name, ext_args) = args
+                .split_first()
+                .expect("clap guarantees at least one element in External");
+            commands::external::exec_extension(name, ext_args, &cli.neo4j);
+        }
     }
 }
