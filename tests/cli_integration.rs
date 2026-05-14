@@ -1559,6 +1559,7 @@ mod external_subcommand {
     fn not_found_exits_127_with_binary_name() {
         Command::cargo_bin("relate")
             .unwrap()
+            .env("PATH", "") // empty PATH guarantees the binary is never found
             .arg("nonexistent-subcommand")
             .assert()
             .code(127)
