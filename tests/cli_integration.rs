@@ -1487,8 +1487,7 @@ mod external_subcommand {
     fn make_stub_script(dir: &tempfile::TempDir, name: &str, body: &str) {
         let path = dir.path().join(name);
         fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("write stub");
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
-            .expect("chmod stub");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("chmod stub");
     }
 
     fn with_stub_path(dir: &tempfile::TempDir) -> String {
@@ -1545,10 +1544,7 @@ mod external_subcommand {
             .unwrap()
             .env("PATH", with_stub_path(&dir))
             .arg("lint")
-            .arg(
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("fixtures/valid.cypher"),
-            )
+            .arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/valid.cypher"))
             .assert()
             .success()
             .stdout(predicates::str::contains("STUB").not());
@@ -1572,8 +1568,7 @@ mod external_subcommand {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("relate-hello");
         fs::write(&path, "#!/bin/sh\necho hi\n").expect("write file");
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o644))
-            .expect("set non-executable");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).expect("set non-executable");
         Command::cargo_bin("relate")
             .unwrap()
             .env("PATH", with_stub_path(&dir))
