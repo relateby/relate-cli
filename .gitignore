@@ -5,6 +5,7 @@
 # Tool-managed directories
 .claude/worktrees/
 .claude/settings.local.json
+.claude/launch.json
 
 # Editor and OS artifacts
 .DS_Store
