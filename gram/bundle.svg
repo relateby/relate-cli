@@ -1,0 +1,37 @@
+<svg font-family="monospace" font-size="10" viewBox="-207.00 -207.00 1014.00 494.00" xmlns="http://www.w3.org/2000/svg">
+<g id="path-envelopes"/>
+<g id="edges">
+<path d="M 542.93,53.96 A 421.56,421.56 0 0 1 63.66,58.52 L 59.48,59.24 L 57.64,53.14 L 64.06,52.68 L 64.78,56.86 A 419.56,419.56 0 0 0 541.78,52.33 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(360.0,300.00,130.00)" x="299.99999999999994" y="130">
+RADIATES
+</text>
+<path d="M 539.49,48.05 A 774.61,774.61 0 0 1 68.14,50.49 L 64.36,52.41 L 60.82,47.10 L 66.82,44.80 L 68.74,48.58 A 772.61,772.61 0 0 0 538.87,46.15 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(360.0,300.00,85.00)" x="299.99999999999994" y="85">
+RADIATES
+</text>
+<path d="M 538.00,41.00 L 70.00,41.00 L 70.00,44.00 L 62.00,40.00 L 70.00,36.00 L 70.00,39.00 L 538.00,39.00 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(360.0,300.00,40.00)" x="300" y="40">
+RADIATES
+</text>
+<path d="M 539.49,31.95 A 774.61,774.61 0 0 0 68.14,29.51 L 64.36,27.59 L 60.82,32.90 L 66.82,35.20 L 68.74,31.42 A 772.61,772.61 0 0 1 538.87,33.85 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(360.0,300.00,-5.00)" x="300" y="-5">
+RADIATES
+</text>
+<path d="M 542.93,26.04 A 421.56,421.56 0 0 0 63.66,21.48 L 59.48,20.76 L 57.64,26.86 L 64.06,27.32 L 64.78,23.14 A 419.56,419.56 0 0 1 541.78,27.67 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(360.0,300.00,-50.00)" x="300.00000000000006" y="-50">
+RADIATES
+</text>
+</g>
+<g id="nodes">
+<circle cx="560" cy="40" fill="#e8f4fb" r="22" stroke="#3399cc" stroke-width="1.5"/>
+<circle cx="40" cy="40" fill="#e8f4fb" r="22" stroke="#3399cc" stroke-width="1.5"/>
+</g>
+<g id="labels">
+<text fill="#333" text-anchor="middle" x="560" y="44">
+a:Pole
+</text>
+<text fill="#333" text-anchor="middle" x="40" y="44">
+b:Pole
+</text>
+</g>
+</svg>

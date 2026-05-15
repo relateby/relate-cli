@@ -1,0 +1,53 @@
+<svg font-family="monospace" font-size="10" viewBox="-207.00 -207.00 1014.00 820.68" xmlns="http://www.w3.org/2000/svg">
+<g id="path-envelopes"/>
+<g id="edges">
+<path d="M 278.56,361.56 A 530.12,530.12 0 0 1 59.84,229.18 L 55.60,229.11 L 54.95,222.77 L 61.33,223.53 L 61.26,227.77 A 528.12,528.12 0 0 0 279.15,359.65 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(31.6,158.20,305.81)" x="158.20491812281864" y="305.8122538627563">
+BRIDGE
+</text>
+<path d="M 285.77,349.84 A 530.12,530.12 0 0 0 69.08,214.18 L 67.10,210.43 L 61.14,212.70 L 64.70,218.06 L 68.46,216.08 A 528.12,528.12 0 0 1 284.33,351.23 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(31.6,181.80,267.49)" x="181.7950818838611" y="267.49118689265237">
+BRIDGE
+</text>
+<path d="M 57.98,193.91 L 274.20,55.35 L 272.58,52.82 L 281.48,51.87 L 276.90,59.55 L 275.28,57.03 L 59.06,195.60 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(-32.7,170.00,123.31)" x="169.99999999652277" y="123.31234371491394">
+BRIDGE
+</text>
+<path d="M 299.00,344.68 L 299.00,70.00 L 296.00,70.00 L 300.00,62.00 L 304.00,70.00 L 301.00,70.00 L 301.00,344.68 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(90.0,300.00,203.34)" x="299.99999999986267" y="203.33937666279041">
+BRIDGE
+</text>
+<path d="M 314.23,349.84 A 530.12,530.12 0 0 1 530.92,214.18 L 532.90,210.43 L 538.86,212.70 L 535.30,218.06 L 531.54,216.08 A 528.12,528.12 0 0 0 315.67,351.23 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(-31.6,418.20,267.49)" x="418.20491812121935" y="267.49118688278554">
+BRIDGE
+</text>
+<path d="M 321.44,361.56 A 530.12,530.12 0 0 0 540.16,229.18 L 544.40,229.11 L 545.05,222.77 L 538.67,223.53 L 538.74,227.77 A 528.12,528.12 0 0 1 320.85,359.65 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(-31.6,441.80,305.81)" x="441.7950818854605" y="305.81225385092046">
+BRIDGE
+</text>
+<path d="M 540.94,195.60 L 324.72,57.03 L 323.10,59.55 L 318.52,51.87 L 327.42,52.82 L 325.80,55.35 L 542.02,193.91 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(32.7,430.00,123.31)" x="429.9999999965228" y="123.31234370406261">
+BRIDGE
+</text>
+</g>
+<g id="nodes">
+<circle cx="40" cy="206.62468742982787" fill="#e8f4fb" r="22" stroke="#3399cc" stroke-width="1.5"/>
+<circle cx="300.0000000066798" cy="366.67875332558083" fill="#e8f4fb" r="22" stroke="#3399cc" stroke-width="1.5"/>
+<circle cx="560" cy="206.6246874081252" fill="#e8f4fb" r="22" stroke="#3399cc" stroke-width="1.5"/>
+<circle cx="299.99999999304555" cy="40" fill="#e8f4fb" r="22" stroke="#3399cc" stroke-width="1.5"/>
+</g>
+<g id="labels">
+<text fill="#333" text-anchor="middle" x="40" y="210.62468742982787">
+altstadt:Land
+</text>
+<text fill="#333" text-anchor="middle" x="300.0000000066798" y="370.67875332558083">
+kneiphof:Island
+</text>
+<text fill="#333" text-anchor="middle" x="560" y="210.6246874081252">
+lobenicht:Land
+</text>
+<text fill="#333" text-anchor="middle" x="299.99999999304555" y="44">
+lomse:Island
+</text>
+</g>
+</svg>
