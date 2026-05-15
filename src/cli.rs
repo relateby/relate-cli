@@ -70,9 +70,66 @@ pub enum Commands {
     Read(ReadArgs),
     /// Host a directory of parameterized .cypher files as MCP tools (stdio)
     Mcp(McpArgs),
+    /// Render a .gram file as HTML or SVG
+    Render(RenderArgs),
     /// Delegate to an external `relate-<name>` binary on PATH
     #[command(external_subcommand)]
     External(Vec<String>),
+}
+
+#[derive(Debug, clap::Args)]
+#[command(
+    about = "Render a .gram file as an interactive HTML page or static SVG diagram",
+    long_about = "Parse a .gram graph notation file and render it as a self-contained HTML page \
+                  (interactive: pan/zoom, click-to-inspect nodes, colored path envelopes) or a \
+                  deterministic static SVG suitable for embedding in documentation.\n\n\
+                  The output file is written next to the input by default. Use --output to \
+                  control the destination and --open to launch the result in the system viewer \
+                  immediately after writing.",
+    after_help = "Examples:\n  \
+                  relate render graph.gram\n  \
+                  relate render graph.gram --format svg --output diagram.svg\n  \
+                  relate render graph.gram --open\n  \
+                  relate render graph.gram --json | jq -r .output"
+)]
+pub struct RenderArgs {
+    /// Path to the .gram file to render
+    pub file: PathBuf,
+
+    /// Output format: html (default) produces an interactive self-contained HTML page;
+    /// svg produces a deterministic static SVG for embedding in Markdown or documentation
+    #[arg(long, short = 'f', value_enum, default_value_t = OutputFormat::Html)]
+    pub format: OutputFormat,
+
+    /// Destination file path (default: <input-stem>.<format>, written next to the input file)
+    #[arg(long, short = 'o')]
+    pub output: Option<PathBuf>,
+
+    /// Open the output file in the system default viewer immediately after a successful write
+    #[arg(long)]
+    pub open: bool,
+
+    /// On success print {"output":"<path>","format":"html|svg"} to stdout;
+    /// on error print {"error":"<message>"}. No other stdout output when active.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum OutputFormat {
+    /// Interactive HTML page with pan/zoom and click-to-inspect
+    Html,
+    /// Deterministic static SVG suitable for embedding in documentation
+    Svg,
+}
+
+impl std::fmt::Display for OutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputFormat::Html => write!(f, "html"),
+            OutputFormat::Svg => write!(f, "svg"),
+        }
+    }
 }
 
 /// Language selection for --expr and stdin input.

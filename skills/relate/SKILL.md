@@ -95,6 +95,7 @@ Expected: help text listing `lint`, `parse`, `query`, `write`, `read`, `mcp` sub
 | Validate Cypher or Gram files | `relate lint` | `relate-lint` |
 | Execute a Cypher query against Neo4j | `relate query` | `relate-query` |
 | Batch-load a CSV / JSON / JSONL into Neo4j | `relate query --apply` | `relate-query` |
+| Render a gram file as HTML or SVG | `relate render` | `relate-render` |
 | Inspect parse tree of a file | `relate parse` | *(skill coming soon)* |
 | Write Gram graph data to Neo4j | `relate write` | *(skill coming soon)* |
 | Query Neo4j and save as Gram | `relate read` | *(skill coming soon)* |
@@ -142,5 +143,6 @@ This skill's job is done when:
 skills/
 ├── relate/SKILL.md          ← this file (overview + install)
 ├── relate-lint/SKILL.md     ← lint workflow for .cypher, .gram, .md, .adoc
-└── relate-query/SKILL.md    ← execute parameterized Cypher against Neo4j
+├── relate-query/SKILL.md    ← execute parameterized Cypher against Neo4j
+└── relate-render/SKILL.md   ← render gram files as interactive HTML or static SVG
 ```

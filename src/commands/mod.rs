@@ -4,6 +4,7 @@ pub mod mcp;
 pub mod parse;
 pub mod query;
 pub mod read;
+pub mod render;
 pub mod write;
 
 /// Convert a cypher-data diagnostic to the shared gram_diagnostics type.

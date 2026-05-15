@@ -3,6 +3,7 @@ use clap::Parser;
 
 mod cli;
 mod commands;
+mod gram_render;
 
 use cli::{Cli, Commands};
 
@@ -38,6 +39,13 @@ async fn main() -> Result<()> {
         Commands::Write(args) => commands::write::run(args, cli.neo4j).await,
         Commands::Read(args) => commands::read::run(args, cli.neo4j).await,
         Commands::Mcp(args) => commands::mcp::run(args).await,
+        Commands::Render(args) => {
+            if let Err(e) = commands::render::run(args) {
+                eprintln!("error: {e:#}");
+                std::process::exit(1);
+            }
+            Ok(())
+        }
         Commands::External(args) => {
             let (name, ext_args) = args
                 .split_first()

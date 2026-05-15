@@ -15,9 +15,9 @@
 
 **Purpose**: Add dependencies and create the module skeleton so all phases can proceed.
 
-- [ ] T001 Add kurbo, svg, geo (convex_hull feature), and open crate dependencies to Cargo.toml
-- [ ] T002 [P] Create assets/vendor/ directory and add paper-core.min.js and d3-force.min.js bundles; record SHA-256 checksums in assets/vendor/CHECKSUMS
-- [ ] T003 [P] Create src/gram_render/ module with stub implementations: mod.rs (re-exports), graph.rs (empty types), layout.rs (zero-position stub), html.rs (returns empty string), svg.rs (returns empty string)
+- [x] T001 Add kurbo, svg, geo (convex_hull feature), and open crate dependencies to Cargo.toml
+- [x] T002 [P] Create assets/vendor/ directory and add paper-core.min.js and d3-force.min.js bundles; record SHA-256 checksums in assets/vendor/CHECKSUMS
+- [x] T003 [P] Create src/gram_render/ module with stub implementations: mod.rs (re-exports), graph.rs (empty types), layout.rs (zero-position stub), html.rs (returns empty string), svg.rs (returns empty string)
 
 ---
 
@@ -27,11 +27,11 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T004 Define all GramGraph data types with serde derives in src/gram_render/graph.rs: GramGraph, GramNode, GramEdge, GramPath, PathMember, NestingRelation, LayoutResult, Vec2, RenderError
-- [ ] T005 Implement parse_gram() tree-sitter traversal in src/gram_render/graph.rs: walk node_pattern, relationship_pattern, path_pattern, nested_graph node kinds to populate GramGraph; return RenderError::EmptyGraph when no nodes found
-- [ ] T006 [P] Implement layout::compute() spring embedder in src/gram_render/layout.rs: circular initial placement, 500 iterations of Coulomb repulsion + Hooke attraction + centering force with linear cooling, normalize to 600×600 canvas; recursive call for nested children
-- [ ] T007 [P] Add RenderArgs (file, --format, --output, --open, --json), OutputFormat enum, and Commands::Render variant to src/cli.rs; wire dispatch in src/main.rs as synchronous call (no .await)
-- [ ] T008 Implement stub dispatch in src/commands/render.rs: read file, call gram_render::parse_gram(), derive default output path as <input-stem>.<format>, call render_html()/render_svg() stubs, write output file; return exit code 1 on RenderError, 2 on I/O error
+- [x] T004 Define all GramGraph data types with serde derives in src/gram_render/graph.rs: GramGraph, GramNode, GramEdge, GramPath, PathMember, NestingRelation, LayoutResult, Vec2, RenderError
+- [x] T005 Implement parse_gram() tree-sitter traversal in src/gram_render/graph.rs: walk node_pattern, relationship_pattern, path_pattern, nested_graph node kinds to populate GramGraph; return RenderError::EmptyGraph when no nodes found
+- [x] T006 [P] Implement layout::compute() spring embedder in src/gram_render/layout.rs: circular initial placement, 500 iterations of Coulomb repulsion + Hooke attraction + centering force with linear cooling, normalize to 600×600 canvas; recursive call for nested children
+- [x] T007 [P] Add RenderArgs (file, --format, --output, --open, --json), OutputFormat enum, and Commands::Render variant to src/cli.rs; wire dispatch in src/main.rs as synchronous call (no .await)
+- [x] T008 Implement stub dispatch in src/commands/render.rs: read file, call gram_render::parse_gram(), derive default output path as <input-stem>.<format>, call render_html()/render_svg() stubs, write output file; return exit code 1 on RenderError, 2 on I/O error
 
 **Checkpoint**: `cargo build` succeeds. `relate render --help` shows all flags. `relate render any.gram` runs without panic (produces empty output file from stub).
 
@@ -43,9 +43,9 @@
 
 **Independent Test**: Run `relate render sample.gram`, open the .html file in a browser (offline), and verify: graph is visible, named paths have distinct colored envelopes, clicking a node shows its properties in the sidebar.
 
-- [ ] T009 [P] [US1] Write assets/templates/render.js: parse gram-data JSON; run d3-force to convergence synchronously; draw path envelopes (convex hull of member node positions → expanded → Bézier-rounded Paper.js Path with distinct per-path HSL fill); draw edges (directed: Line + triangular Path arrowhead; undirected: plain Line); draw nodes (Group: Path.Circle + PointText label); draw compound outlines (Rectangle from Group.bounds + padding); wire pan/zoom view event handlers; wire project.hitTest() click-to-inspect → sidebar pre element
-- [ ] T010 [P] [US1] Implement gram_render::render_html() in src/gram_render/html.rs: derive LayoutResult, serialize GramGraph+layout to JSON via serde_json, embed PAPER_JS (include_str! assets/vendor/paper-core.min.js), D3_FORCE (include_str! assets/vendor/d3-force.min.js), data JSON, and render.js (include_str! assets/templates/render.js) into a complete HTML5 document string
-- [ ] T011 [US1] Wire Format::Html branch in src/commands/render.rs to call gram_render::render_html() and write output; run end-to-end with a sample .gram file and verify the HTML opens correctly in a browser
+- [x] T009 [P] [US1] Write assets/templates/render.js: parse gram-data JSON; run d3-force to convergence synchronously; draw path envelopes (convex hull of member node positions → expanded → Bézier-rounded Paper.js Path with distinct per-path HSL fill); draw edges (directed: Line + triangular Path arrowhead; undirected: plain Line); draw nodes (Group: Path.Circle + PointText label); draw compound outlines (Rectangle from Group.bounds + padding); wire pan/zoom view event handlers; wire project.hitTest() click-to-inspect → sidebar pre element
+- [x] T010 [P] [US1] Implement gram_render::render_html() in src/gram_render/html.rs: derive LayoutResult, serialize GramGraph+layout to JSON via serde_json, embed PAPER_JS (include_str! assets/vendor/paper-core.min.js), D3_FORCE (include_str! assets/vendor/d3-force.min.js), data JSON, and render.js (include_str! assets/templates/render.js) into a complete HTML5 document string
+- [x] T011 [US1] Wire Format::Html branch in src/commands/render.rs to call gram_render::render_html() and write output; run end-to-end with a sample .gram file and verify the HTML opens correctly in a browser
 
 **Checkpoint**: `relate render sample.gram` writes a .html file that opens offline, shows the graph with interactive path envelopes, and click-to-inspect works.
 
@@ -57,10 +57,10 @@
 
 **Independent Test**: Run `relate render sample.gram --format svg` twice; diff the two files — they must be identical. Embed the SVG in a Markdown README and verify it renders on GitHub.
 
-- [ ] T012 [P] [US2] Implement path envelope drawing in src/gram_render/svg.rs: collect member node positions into geo::MultiPoint, call ConvexHull::convex_hull(), expand vertices radially from centroid, connect with kurbo::CubicBez (tangent-continuous), serialize to svg::node::element::Path with per-path HSL fill and semi-transparent opacity
-- [ ] T013 [P] [US2] Implement edge drawing in src/gram_render/svg.rs: directed edges as kurbo::Line with a svg marker arrowhead triangle defined in <defs>; undirected edges as plain svg line; edge label as svg Text at midpoint
-- [ ] T014 [P] [US2] Implement node and compound outline drawing in src/gram_render/svg.rs: regular nodes as svg circle with label Text below; compound nodes (NestingRelation parents) as kurbo::RoundedRect from union of children Rects with padding; nested children laid out within parent bounds
-- [ ] T015 [US2] Assemble render_svg() in src/gram_render/svg.rs: create svg::Document with viewBox, add layered <g> groups (path-envelopes → edges → nodes → compound-outlines → labels), return complete SVG string; depends on T012–T014
+- [x] T012 [P] [US2] Implement path envelope drawing in src/gram_render/svg.rs: collect member node positions into geo::MultiPoint, call ConvexHull::convex_hull(), expand vertices radially from centroid, connect with kurbo::CubicBez (tangent-continuous), serialize to svg::node::element::Path with per-path HSL fill and semi-transparent opacity
+- [x] T013 [P] [US2] Implement edge drawing in src/gram_render/svg.rs: directed edges as kurbo::Line with a svg marker arrowhead triangle defined in <defs>; undirected edges as plain svg line; edge label as svg Text at midpoint
+- [x] T014 [P] [US2] Implement node and compound outline drawing in src/gram_render/svg.rs: regular nodes as svg circle with label Text below; compound nodes (NestingRelation parents) as kurbo::RoundedRect from union of children Rects with padding; nested children laid out within parent bounds
+- [x] T015 [US2] Assemble render_svg() in src/gram_render/svg.rs: create svg::Document with viewBox, add layered <g> groups (path-envelopes → edges → nodes → compound-outlines → labels), return complete SVG string; depends on T012–T014
 - [ ] T016 [US2] Add golden-file SVG tests in tests/render_svg/: create fixture .gram files (simple graph, graph with named paths, graph with nested structure); generate expected .svg files; assert render_svg() output matches fixtures byte-for-byte on re-run
 
 **Checkpoint**: `relate render sample.gram --format svg` writes a valid SVG. Running twice produces identical output. The SVG embeds in a Markdown README and renders correctly.
@@ -73,7 +73,7 @@
 
 **Independent Test**: Run `relate render sample.gram --open`; verify the file is written and the system's default browser (or SVG viewer) opens it automatically.
 
-- [ ] T017 [US3] Implement --open flag in src/commands/render.rs: after successful file write, call open::that(&output_path)?; only fires on success; failure to open is logged to stderr but does not change exit code; compatible with --json flag
+- [x] T017 [US3] Implement --open flag in src/commands/render.rs: after successful file write, call open::that(&output_path)?; only fires on success; failure to open is logged to stderr but does not change exit code; compatible with --json flag
 
 **Checkpoint**: `relate render sample.gram --open` opens the browser automatically. Render failure suppresses the open call.
 
@@ -85,8 +85,8 @@
 
 **Independent Test**: Run `relate render sample.gram --output /tmp/out.html`; verify file appears at /tmp/out.html. Run with `--json`; verify stdout is valid JSON with an `output` key.
 
-- [ ] T018 [US4] Implement --output flag and format-precedence edge case in src/commands/render.rs: when --output is provided, use it as-is; when absent, derive <input-stem>.<format>; format flag always determines content regardless of output file extension; overwrite silently if output exists
-- [ ] T019 [US4] Implement --json flag in src/commands/render.rs: on success print {"output":"<path>","format":"html|svg"} to stdout; on RenderError or I/O error print {"error":"<message>"} to stdout; no other stdout output when --json is active; stderr output suppressed when --json is active
+- [x] T018 [US4] Implement --output flag and format-precedence edge case in src/commands/render.rs: when --output is provided, use it as-is; when absent, derive <input-stem>.<format>; format flag always determines content regardless of output file extension; overwrite silently if output exists
+- [x] T019 [US4] Implement --json flag in src/commands/render.rs: on success print {"output":"<path>","format":"html|svg"} to stdout; on RenderError or I/O error print {"error":"<message>"} to stdout; no other stdout output when --json is active; stderr output suppressed when --json is active
 
 **Checkpoint**: `relate render s.gram --output /tmp/x.html --json` prints `{"output":"/tmp/x.html","format":"html"}` to stdout. Script `$(relate render s.gram --json | jq -r .output)` returns the output path.
 
@@ -96,11 +96,11 @@
 
 **Purpose**: Agent-friendliness (Principle III), self-contained help (Principle IV), and library isolation verification (FR-013 / SC-006).
 
-- [ ] T020 [P] Register render_gram MCP tool in src/commands/mcp.rs: input schema {gram_source: string, format: "svg"|"html" (default "svg")}; call gram_render::parse_gram() then render_svg()/render_html(); return content array with rendered string; return isError on RenderError
-- [ ] T021 [P] Create skills/relate-render/SKILL.md: YAML frontmatter (name: relate-render, description, triggers); numbered workflow (1. identify gram file, 2. run relate render, 3. verify output, 4. open or embed); checkpoints after each step; exit criteria (output file written and openable); anti-rationalization table
-- [ ] T022 Update skills/relate/SKILL.md routing table to add relate-render entry with command, description, and trigger keywords
-- [ ] T023 [P] Add comprehensive --help text to RenderArgs in src/cli.rs: about string with purpose; per-flag help strings including defaults; two concrete usage examples in the doc comment
-- [ ] T024 [P] Verify SC-006 library isolation in src/gram_render/mod.rs: add a module-level doc comment asserting no CLI crate dependencies; confirm with `cargo check --package` that gram_render compiles when clap/tokio are absent from its direct imports; document the verification step in plan.md
+- [x] T020 [P] Register render_gram MCP tool in src/commands/mcp.rs: input schema {gram_source: string, format: "svg"|"html" (default "svg")}; call gram_render::parse_gram() then render_svg()/render_html(); return content array with rendered string; return isError on RenderError
+- [x] T021 [P] Create skills/relate-render/SKILL.md: YAML frontmatter (name: relate-render, description, triggers); numbered workflow (1. identify gram file, 2. run relate render, 3. verify output, 4. open or embed); checkpoints after each step; exit criteria (output file written and openable); anti-rationalization table
+- [x] T022 Update skills/relate/SKILL.md routing table to add relate-render entry with command, description, and trigger keywords
+- [x] T023 [P] Add comprehensive --help text to RenderArgs in src/cli.rs: about string with purpose; per-flag help strings including defaults; two concrete usage examples in the doc comment
+- [x] T024 [P] Verify SC-006 library isolation in src/gram_render/mod.rs: add a module-level doc comment asserting no CLI crate dependencies; confirm with `cargo check --package` that gram_render compiles when clap/tokio are absent from its direct imports; document the verification step in plan.md
 
 ---
 

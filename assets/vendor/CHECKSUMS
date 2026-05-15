@@ -1,0 +1,6 @@
+# SHA-256 checksums for vendored JS assets
+# paper.js v0.12.18 — https://unpkg.com/paper@0.12.18/dist/paper-core.min.js
+3a8c73ecdf3929a7fe05f96b82e8146193ea449c5c3e889c5f4fe0184a30ed96  paper-core.min.js
+
+# d3-force v3.0.0 — https://unpkg.com/d3-force@3.0.0/dist/d3-force.min.js
+1e07b473241328795d5ea9ad479a7bbabd765012fa2ef95633c83b69868dff6b  d3-force.min.js

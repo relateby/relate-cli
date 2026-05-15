@@ -1,0 +1,33 @@
+<svg font-family="monospace" font-size="10" viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<marker id="arrow" markerHeight="8" markerWidth="8" orient="auto" refX="6" refY="3">
+<path d="M0,0 L0,6 L8,3 z" fill="#aaa"/>
+</marker>
+</defs>
+<g id="path-envelopes">
+<g>
+<path d="M 8.00,40.00 Q 8.00,40.00 300.00,40.00 Q 592.00,40.00 300.00,40.00 Q 8.00,40.00 8.00,40.00 Z" fill="hsla(200,65%,60%,0.18)" stroke="hsla(200,65%,45%,0.5)" stroke-width="1.5"/>
+<text fill="#666" font-size="11" text-anchor="middle" x="213.33333333333334" y="2">
+friends
+</text>
+</g>
+</g>
+<g id="edges">
+<path d="M 62.00,40.00 L 538.00,40.00" fill="none" marker-end="url(#arrow)" stroke="#aaa" stroke-width="1.5"/>
+<text fill="#888" font-size="10" text-anchor="middle" x="300" y="48">
+KNOWS
+</text>
+</g>
+<g id="nodes">
+<circle cx="40" cy="40" fill="#e8f4fb" r="22" stroke="#3399cc" stroke-width="1.5"/>
+<circle cx="560" cy="40" fill="#e8f4fb" r="22" stroke="#3399cc" stroke-width="1.5"/>
+</g>
+<g id="labels">
+<text fill="#333" font-size="10" text-anchor="middle" x="40" y="44">
+alice:Person
+</text>
+<text fill="#333" font-size="10" text-anchor="middle" x="560" y="44">
+bob:Person
+</text>
+</g>
+</svg>
