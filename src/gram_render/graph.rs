@@ -232,7 +232,7 @@ impl GraphBuilder {
     }
 
     /// Returns the rightmost leaf (atomic) node in a left-associative chain.
-    fn rightmost_leaf_of<'a>(pattern: &'a Pattern<Subject>) -> &'a Pattern<Subject> {
+    fn rightmost_leaf_of(pattern: &Pattern<Subject>) -> &Pattern<Subject> {
         if pattern.elements().is_empty() {
             pattern
         } else {

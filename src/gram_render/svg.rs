@@ -329,7 +329,7 @@ fn build_straight_edge(
         let mx = (x1 + x2) / 2.0;
         let my = (y1 + y2) / 2.0;
         let deg = natural_angle.to_degrees();
-        let deg = if deg > 90.0 || deg < -90.0 {
+        let deg = if !(-90.0..=90.0).contains(&deg) {
             deg + 180.0
         } else {
             deg
@@ -420,7 +420,7 @@ fn build_arc_edge(edge: &GramEdge, arc: &ArcParams, natural_angle: f64) -> Vec<B
         let mid_x = arc.arc_cx + r * mid_angle.cos();
         let mid_y = arc.arc_cy + r * mid_angle.sin();
         let deg = natural_angle.to_degrees();
-        let deg = if deg > 90.0 || deg < -90.0 {
+        let deg = if !(-90.0..=90.0).contains(&deg) {
             deg + 180.0
         } else {
             deg
