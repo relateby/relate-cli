@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use indexmap::IndexMap;
+
 use gram_codec::parse_gram as codec_parse;
 use pattern_core::{Pattern, Subject};
 
@@ -18,7 +20,7 @@ pub struct GramGraph {
 pub struct GramNode {
     pub id: String,
     pub labels: Vec<String>,
-    pub properties: HashMap<String, serde_json::Value>,
+    pub properties: IndexMap<String, serde_json::Value>,
     pub is_nested: bool,
 }
 
@@ -28,7 +30,7 @@ pub struct GramEdge {
     pub source: String,
     pub target: String,
     pub label: Option<String>,
-    pub properties: HashMap<String, serde_json::Value>,
+    pub properties: IndexMap<String, serde_json::Value>,
     pub directed: bool,
 }
 
@@ -270,11 +272,13 @@ impl GraphBuilder {
 
 fn convert_properties(
     props: &HashMap<String, pattern_core::Value>,
-) -> HashMap<String, serde_json::Value> {
-    props
+) -> IndexMap<String, serde_json::Value> {
+    let mut map: IndexMap<String, serde_json::Value> = props
         .iter()
         .map(|(k, v)| (k.clone(), convert_value(v)))
-        .collect()
+        .collect();
+    map.sort_keys();
+    map
 }
 
 fn convert_value(v: &pattern_core::Value) -> serde_json::Value {
