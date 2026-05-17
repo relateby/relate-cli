@@ -1,7 +1,3 @@
-// Golden-file test directory
-#[cfg(test)]
-const FIXTURE_DIR: &str = "tests/render_svg/fixtures";
-
 use std::collections::HashMap;
 use std::f64::consts::PI;
 
@@ -533,7 +529,7 @@ fn build_envelope(path: &GramPath, positions: &HashMap<String, Vec2>, idx: usize
         group = group.add(
             Text::new(pid.clone())
                 .set("x", fp.x)
-                .set("y", fp.y - TUBE_RADIUS - 6.0)
+                .set("y", fp.y - TUBE_RADIUS - 0.25 * HEM)
                 .set("text-anchor", "middle")
                 .set("fill", "#555"),
         );
@@ -546,6 +542,8 @@ mod tests {
     use super::*;
     use crate::gram_render::graph::parse_gram;
     use std::path::Path;
+
+    const FIXTURE_DIR: &str = "tests/render_svg/fixtures";
 
     fn render_fixture(name: &str) -> String {
         let gram_path = format!("{FIXTURE_DIR}/{name}.gram");

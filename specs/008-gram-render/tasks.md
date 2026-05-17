@@ -61,7 +61,7 @@
 - [x] T013 [P] [US2] Implement edge drawing in src/gram_render/svg.rs: directed edges as kurbo::Line with a svg marker arrowhead triangle defined in <defs>; undirected edges as plain svg line; edge label as svg Text at midpoint
 - [x] T014 [P] [US2] Implement node and compound outline drawing in src/gram_render/svg.rs: regular nodes as svg circle with label Text below; compound nodes (NestingRelation parents) as kurbo::RoundedRect from union of children Rects with padding; nested children laid out within parent bounds
 - [x] T015 [US2] Assemble render_svg() in src/gram_render/svg.rs: create svg::Document with viewBox, add layered <g> groups (path-envelopes → edges → nodes → compound-outlines → labels), return complete SVG string; depends on T012–T014
-- [ ] T016 [US2] Add golden-file SVG tests in tests/render_svg/: create fixture .gram files (simple graph, graph with named paths, graph with nested structure); generate expected .svg files; assert render_svg() output matches fixtures byte-for-byte on re-run
+- [x] T016 [US2] Add golden-file SVG tests in tests/render_svg/: create fixture .gram files (simple graph, graph with named paths, graph with nested structure); generate expected .svg files; assert render_svg() output matches fixtures byte-for-byte on re-run
 
 **Checkpoint**: `relate render sample.gram --format svg` writes a valid SVG. Running twice produces identical output. The SVG embeds in a Markdown README and renders correctly.
 

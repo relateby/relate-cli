@@ -3,7 +3,7 @@
 <g>
 <path d="M 40.00,40.00 L 560.00,40.00" fill="none" stroke="hsla(200,65%,45%,0.40)" stroke-linecap="round" stroke-linejoin="round" stroke-width="115"/>
 <path d="M 40.00,40.00 L 560.00,40.00" fill="none" stroke="hsla(200,65%,60%,0.20)" stroke-linecap="round" stroke-linejoin="round" stroke-width="112"/>
-<text fill="#555" text-anchor="middle" x="40" y="-22">
+<text fill="#555" text-anchor="middle" x="40" y="-21.6">
 friends
 </text>
 </g>

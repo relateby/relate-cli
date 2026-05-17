@@ -13,13 +13,13 @@ use serde::{Deserialize, Serialize};
 pub struct RenderGramParams {
     /// The gram source text to render.
     pub gram_source: String,
-    /// Output format: "svg" (default) or "html".
+    /// Output format: "html" (default) or "svg".
     #[serde(default = "default_format")]
     pub format: String,
 }
 
 fn default_format() -> String {
-    "svg".to_string()
+    "html".to_string()
 }
 
 #[derive(Debug, Clone)]
@@ -55,7 +55,12 @@ impl RelateServer {
 
         let output = match params.format.to_lowercase().as_str() {
             "html" => render_html(&graph),
-            _ => render_svg(&graph),
+            "svg" => render_svg(&graph),
+            other => {
+                return CallToolResult::error(vec![Content::text(format!(
+                    "unknown format {other:?}; expected \"html\" or \"svg\""
+                ))]);
+            }
         };
 
         CallToolResult::success(vec![Content::text(output)])
