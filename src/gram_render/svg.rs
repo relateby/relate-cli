@@ -5,9 +5,6 @@ const FIXTURE_DIR: &str = "tests/render_svg/fixtures";
 use std::collections::HashMap;
 use std::f64::consts::PI;
 
-use geo::algorithm::ConvexHull;
-use geo::{MultiPoint, Point};
-use kurbo::{BezPath, PathEl, Point as KPoint};
 use svg::node::element::{Circle, Group, Path as SvgPath, Text};
 use svg::node::Node;
 use svg::Document;
@@ -15,14 +12,22 @@ use svg::Document;
 use super::graph::{GramEdge, GramGraph, GramNode, GramPath, PathMember};
 use super::layout::{self, Vec2};
 
-const NODE_RADIUS: f64 = 22.0;
-const DEFLECTION_STEP: f64 = 30.0; // degrees per parallel-edge step
-const MAX_DEFLECTION: f64 = 150.0; // degrees total spread cap
-const SAGITTA_PER_DEG: f64 = 1.5; // pixels of arc height per degree of deflection
-const SHAFT_R: f64 = 1.0;         // half of shaft width (2px total)
-const HEAD_R: f64 = 4.0;          // half of head width (8px total)
-const HEAD_HEIGHT: f64 = 8.0;
-const PADDING: f64 = 44.0;        // NODE_RADIUS * 2
+// ── Typography base ──────────────────────────────────────────────────────────────
+// Matches browser default REM so HTML and SVG renderers produce the same sizes.
+const FONT_SIZE: f64          = 16.0;
+const LINE_HEIGHT_RATIO: f64  = 1.4;
+const HEM: f64                = FONT_SIZE * LINE_HEIGHT_RATIO; // 22.4px — 1 line-height
+
+// ── All sizing derived from HEM ───────────────────────────────────────────────────
+const NODE_RADIUS: f64        = 2.0 * HEM;   // 44.8px — encloses 7-hex cluster
+const DEFLECTION_STEP: f64    = 30.0;        // degrees per parallel-edge step
+const MAX_DEFLECTION: f64     = 150.0;       // degrees total spread cap
+const SAGITTA_PER_DEG: f64    = 0.1 * HEM;  // 2.24px per degree of deflection
+const SHAFT_R: f64            = 1.0;         // half shaft width — absolute minimum
+const HEAD_R: f64             = 0.2 * HEM;  // 4.48px half arrowhead width
+const HEAD_HEIGHT: f64        = 0.4 * HEM;  // 8.96px arrowhead length
+const TUBE_RADIUS: f64        = 2.5 * HEM;  // 56.0px — 0.5 HEM overhang per side
+const PADDING: f64            = 2.0 * HEM;  // 44.8px viewBox margin
 
 // Per-path HSL hues (distinct, semi-transparent fills)
 const PATH_HUES: [u16; 6] = [200, 120, 40, 300, 0, 160];
@@ -38,7 +43,7 @@ pub fn render_svg(graph: &GramGraph) -> String {
         .set("xmlns", "http://www.w3.org/2000/svg")
         .set("viewBox", view_box)
         .set("font-family", "monospace")
-        .set("font-size", "10");
+        .set("font-size", FONT_SIZE.to_string());
 
     // ── Layer groups ────────────────────────────────────────────────────────────
     let mut envelopes = Group::new().set("id", "path-envelopes");
@@ -381,20 +386,21 @@ fn build_node(node: &GramNode, pos: Vec2) -> (Circle, Text) {
     };
     let label = Text::new(label_text)
         .set("x", pos.x)
-        .set("y", pos.y + 4.0)
+        .set("y", pos.y + FONT_SIZE * 0.35)
         .set("text-anchor", "middle")
         .set("fill", "#333");
 
     (circle, label)
 }
 
-// ── Envelope builder ─────────────────────────────────────────────────────────────
+// ── Path tube builder ─────────────────────────────────────────────────────────────
 
 fn build_envelope(
     path: &GramPath,
     positions: &HashMap<String, Vec2>,
     idx: usize,
 ) -> Option<Group> {
+    // Collect node centres in path-sequence order (edges ignored)
     let pts: Vec<Vec2> = path
         .members
         .iter()
@@ -408,89 +414,62 @@ fn build_envelope(
         return None;
     }
 
-    let geo_pts: MultiPoint<f64> =
-        MultiPoint::from(pts.iter().map(|p| Point::new(p.x, p.y)).collect::<Vec<_>>());
-    let hull = geo_pts.convex_hull();
-    let hull_pts: Vec<Vec2> = hull.exterior().coords().map(|c| Vec2 { x: c.x, y: c.y }).collect();
-
-    if hull_pts.len() < 2 {
-        return None;
-    }
-
-    let cx = hull_pts.iter().map(|p| p.x).sum::<f64>() / hull_pts.len() as f64;
-    let cy = hull_pts.iter().map(|p| p.y).sum::<f64>() / hull_pts.len() as f64;
-    const ENVELOPE_PAD: f64 = 32.0;
-    let expanded: Vec<KPoint> = hull_pts
+    // Build an SVG polyline path through the node sequence
+    let d = pts
         .iter()
-        .map(|p| {
-            let dx = p.x - cx;
-            let dy = p.y - cy;
-            let len = (dx * dx + dy * dy).sqrt().max(1.0);
-            KPoint::new(cx + (len + ENVELOPE_PAD) * dx / len, cy + (len + ENVELOPE_PAD) * dy / len)
+        .enumerate()
+        .map(|(i, p)| {
+            if i == 0 {
+                format!("M {:.2},{:.2}", p.x, p.y)
+            } else {
+                format!("L {:.2},{:.2}", p.x, p.y)
+            }
         })
-        .collect();
+        .collect::<Vec<_>>()
+        .join(" ");
 
-    let path_data = rounded_poly(&expanded);
     let hue    = PATH_HUES[idx % PATH_HUES.len()];
-    let fill   = format!("hsla({hue},65%,60%,0.18)");
-    let stroke = format!("hsla({hue},65%,45%,0.5)");
+    let fill   = format!("hsla({hue},65%,60%,0.20)");
+    let border = format!("hsla({hue},65%,45%,0.40)");
+    let tube_w = TUBE_RADIUS * 2.0;
 
     let mut group = Group::new();
+
+    // Border stroke — slightly wider and more opaque, renders behind fill
     group = group.add(
         SvgPath::new()
-            .set("d", path_data)
-            .set("fill", fill)
-            .set("stroke", stroke)
-            .set("stroke-width", 1.5),
+            .set("d", d.clone())
+            .set("fill", "none")
+            .set("stroke", border)
+            .set("stroke-width", tube_w + 3.0)
+            .set("stroke-linecap", "round")
+            .set("stroke-linejoin", "round"),
     );
+    // Fill stroke — main colored band
+    group = group.add(
+        SvgPath::new()
+            .set("d", d)
+            .set("fill", "none")
+            .set("stroke", fill)
+            .set("stroke-width", tube_w)
+            .set("stroke-linecap", "round")
+            .set("stroke-linejoin", "round"),
+    );
+
+    // Label above first node
     if let Some(ref pid) = path.id {
+        let fp = pts[0];
         group = group.add(
             Text::new(pid.clone())
-                .set("x", cx)
-                .set("y", cy - ENVELOPE_PAD - 6.0)
+                .set("x", fp.x)
+                .set("y", fp.y - TUBE_RADIUS - 6.0)
                 .set("text-anchor", "middle")
-                .set("font-size", 11)
-                .set("fill", "#666"),
+                .set("fill", "#555"),
         );
     }
     Some(group)
 }
 
-fn rounded_poly(pts: &[KPoint]) -> String {
-    if pts.is_empty() { return String::new(); }
-    let n = pts.len();
-    if n == 1 { return format!("M {},{} Z", pts[0].x, pts[0].y); }
-    if n == 2 { return format!("M {},{} L {},{} Z", pts[0].x, pts[0].y, pts[1].x, pts[1].y); }
-
-    let mut path = BezPath::new();
-    let mid = |a: KPoint, b: KPoint| KPoint::new((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
-    let start = mid(pts[n - 1], pts[0]);
-    path.push(PathEl::MoveTo(start));
-    for i in 0..n {
-        let p = pts[i];
-        let next = pts[(i + 1) % n];
-        let m = mid(p, next);
-        path.push(PathEl::QuadTo(p, m));
-    }
-    path.push(PathEl::ClosePath);
-    path_to_svg_d(&path)
-}
-
-fn path_to_svg_d(path: &BezPath) -> String {
-    let mut d = String::new();
-    for el in path.iter() {
-        match el {
-            PathEl::MoveTo(p)       => d.push_str(&format!("M {:.2},{:.2} ", p.x, p.y)),
-            PathEl::LineTo(p)       => d.push_str(&format!("L {:.2},{:.2} ", p.x, p.y)),
-            PathEl::QuadTo(c, p)    => d.push_str(&format!("Q {:.2},{:.2} {:.2},{:.2} ", c.x, c.y, p.x, p.y)),
-            PathEl::CurveTo(c1, c2, p) => d.push_str(&format!(
-                "C {:.2},{:.2} {:.2},{:.2} {:.2},{:.2} ", c1.x, c1.y, c2.x, c2.y, p.x, p.y
-            )),
-            PathEl::ClosePath       => d.push('Z'),
-        }
-    }
-    d.trim_end().to_string()
-}
 
 #[cfg(test)]
 mod tests {

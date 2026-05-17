@@ -1,0 +1,2 @@
+// a route from a to b, to c
+[route1:Route | (a:Point {name: "Aye"})-[:TO]->(b:Point {name: "Bee"})-[:TO]->(c:Point {name: "See"})]

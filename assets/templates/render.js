@@ -33,13 +33,20 @@
   paper.setup(canvas);
   var view = paper.view;
 
-  var NODE_RADIUS = 22;
-  var SHAFT_WIDTH = 2;
-  var HEAD_WIDTH = SHAFT_WIDTH + 6;   // 8
-  var HEAD_HEIGHT = HEAD_WIDTH;       // 8 — same proportions as Neo4j Browser
-  var DEFLECTION_STEP = 30;           // degrees per parallel-edge step
-  var MAX_DEFLECTION = 150;           // degrees total spread cap
-  var SAGITTA_PER_DEG = 1.5;         // pixels of arc height per degree of deflection
+  // ── HEM-based sizing ──────────────────────────────────────────────────────────
+  // HEM = 1 line-height = REM × 1.4, matching browser default REM (16px).
+  // Mirrors the Rust SVG renderer's FONT_SIZE / LINE_HEIGHT_RATIO / HEM constants
+  // so both renderers produce identical visual sizes at default browser settings.
+  var rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  var HEM = rem * 1.4;                 // 22.4px at default rem=16
+
+  var NODE_RADIUS     = 2    * HEM;    // 44.8px
+  var SHAFT_WIDTH     = 2;             // absolute minimum (px)
+  var HEAD_WIDTH      = 0.4  * HEM;   // 8.96px
+  var HEAD_HEIGHT     = HEAD_WIDTH;
+  var DEFLECTION_STEP = 30;            // degrees per parallel-edge step
+  var MAX_DEFLECTION  = 150;           // degrees total spread cap
+  var SAGITTA_PER_DEG = 0.1  * HEM;   // 2.24px per degree of deflection
 
   // ── Path envelope layer ────────────────────────────────────────────────────────
   var PATH_COLORS = [
@@ -47,6 +54,8 @@
     "hsla(40,80%,60%,0.18)", "hsla(300,60%,65%,0.18)",
     "hsla(0,70%,60%,0.18)", "hsla(160,60%,55%,0.18)"
   ];
+
+  var TUBE_R = 2.5 * HEM;          // 56px — 0.5 HEM overhang per side beyond node edge
 
   paths.forEach(function (path, colorIdx) {
     var memberIds = [];
@@ -61,35 +70,30 @@
     }).filter(Boolean);
     if (pts.length < 2) return;
 
-    var hull = convexHull(pts);
-    if (hull.length < 2) return;
+    var fillColor  = PATH_COLORS[colorIdx % PATH_COLORS.length];
+    var borderColor = fillColor.replace("0.18", "0.40");
 
-    var cx = hull.reduce(function (s, p) { return s + p.x; }, 0) / hull.length;
-    var cy = hull.reduce(function (s, p) { return s + p.y; }, 0) / hull.length;
-    var PAD = 32;
-    var expanded = hull.map(function (p) {
-      var dx = p.x - cx, dy = p.y - cy;
-      var len = Math.sqrt(dx * dx + dy * dy) || 1;
-      return new paper.Point(cx + (len + PAD) * dx / len, cy + (len + PAD) * dy / len);
-    });
+    // Border tube: slightly wider, more opaque — draws behind fill tube
+    var border = new paper.Path({ segments: pts, closed: false });
+    border.strokeCap   = 'round';
+    border.strokeJoin  = 'round';
+    border.strokeWidth = TUBE_R * 2 + 3;
+    border.strokeColor = borderColor;
 
-    var shape = new paper.Path({ closed: true });
-    expanded.forEach(function (p, i) {
-      var next = expanded[(i + 1) % expanded.length];
-      var mid = p.add(next).divide(2);
-      if (i === 0) shape.moveTo(mid);
-      else shape.quadraticCurveTo(p, mid);
-    });
-    shape.fillColor = PATH_COLORS[colorIdx % PATH_COLORS.length];
-    shape.strokeColor = PATH_COLORS[colorIdx % PATH_COLORS.length].replace("0.18", "0.5");
-    shape.strokeWidth = 1.5;
+    // Fill tube: main colored band following the path sequence
+    var tube = new paper.Path({ segments: pts, closed: false });
+    tube.strokeCap   = 'round';
+    tube.strokeJoin  = 'round';
+    tube.strokeWidth = TUBE_R * 2;
+    tube.strokeColor = fillColor;
 
     if (path.id) {
+      var firstPt = pts[0];
       new paper.PointText({
-        point: new paper.Point(cx, cy - PAD - 10),
+        point: new paper.Point(firstPt.x, firstPt.y - TUBE_R - 8),
         content: path.id,
-        fontSize: 11,
-        fillColor: "#666",
+        fontSize: rem,
+        fillColor: "#555",
         justification: "center"
       });
     }
@@ -292,7 +296,7 @@
     var text = new paper.PointText({
       point: new paper.Point(x, y),
       content: edge.label,
-      fontSize: 10,
+      fontSize: rem * 0.8,
       fillColor: "#888",
       justification: "center"
     });
@@ -319,9 +323,9 @@
       labelText += ":" + node.labels[0];
     }
     var label = new paper.PointText({
-      point: new paper.Point(p.x, p.y + 4),
+      point: new paper.Point(p.x, p.y + rem * 0.35),
       content: labelText,
-      fontSize: 10,
+      fontSize: rem,
       fillColor: "#333",
       justification: "center"
     });
@@ -359,9 +363,13 @@
 
   // ── Center and fit graph in visible canvas area ────────────────────────────────
   // Paper.js inflates canvas.style.width via setup(); use window dimensions instead.
-  var graphBounds = paper.project.activeLayer.bounds;
+  // Use strokeBounds so thick tube strokes are included in the visual extent.
+  var layer = paper.project.activeLayer;
+  var graphBounds = (layer.strokeBounds && layer.strokeBounds.width > 0)
+    ? layer.strokeBounds
+    : layer.bounds;
   if (graphBounds && graphBounds.width > 0) {
-    var PADDING = NODE_RADIUS * 2;
+    var PADDING = NODE_RADIUS;
     var sidebarEl = document.getElementById("sidebar");
     var sidebarW = sidebarEl ? sidebarEl.offsetWidth : 0;
     var vw = window.innerWidth - sidebarW;
@@ -370,38 +378,13 @@
     var fitSy = (vh - PADDING * 2) / graphBounds.height;
     var fitScale = Math.min(fitSx, fitSy, 1);
     var cx = vw / 2, cy = vh / 2;
-    paper.project.activeLayer.translate(
-      new paper.Point(cx - graphBounds.center.x, cy - graphBounds.center.y)
-    );
+    layer.translate(new paper.Point(cx - graphBounds.center.x, cy - graphBounds.center.y));
     if (fitScale < 1) {
-      paper.project.activeLayer.scale(fitScale, new paper.Point(cx, cy));
+      layer.scale(fitScale, new paper.Point(cx, cy));
     }
   }
 
   paper.view.draw();
 
-  // ── Convex hull utility (gift-wrapping) ───────────────────────────────────────
-  function convexHull(points) {
-    if (points.length < 3) return points;
-    var n = points.length;
-    var start = 0;
-    for (var i = 1; i < n; i++) {
-      if (points[i].x < points[start].x) start = i;
-    }
-    var hull = [];
-    var p = start;
-    do {
-      hull.push(points[p]);
-      var q = (p + 1) % n;
-      for (var i = 0; i < n; i++) {
-        if (cross(points[p], points[q], points[i]) < 0) q = i;
-      }
-      p = q;
-    } while (p !== start);
-    return hull;
-  }
 
-  function cross(o, a, b) {
-    return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-  }
 })();

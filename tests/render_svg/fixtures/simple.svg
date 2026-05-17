@@ -1,20 +1,20 @@
-<svg font-family="monospace" font-size="10" viewBox="-207.00 -207.00 1014.00 494.00" xmlns="http://www.w3.org/2000/svg">
+<svg font-family="monospace" font-size="16" viewBox="-340.80 -340.80 1281.60 761.60" xmlns="http://www.w3.org/2000/svg">
 <g id="path-envelopes"/>
 <g id="edges">
-<path d="M 62.00,39.00 L 530.00,39.00 L 530.00,36.00 L 538.00,40.00 L 530.00,44.00 L 530.00,41.00 L 62.00,41.00 Z" fill="#aaa" stroke="none"/>
+<path d="M 84.80,39.00 L 506.24,39.00 L 506.24,35.52 L 515.20,40.00 L 506.24,44.48 L 506.24,41.00 L 84.80,41.00 Z" fill="#aaa" stroke="none"/>
 <text fill="#888" text-anchor="middle" transform="rotate(0.0,300.00,40.00)" x="300" y="40">
 KNOWS
 </text>
 </g>
 <g id="nodes">
-<circle cx="40" cy="40" fill="#e8f4fb" r="22" stroke="#3399cc" stroke-width="1.5"/>
-<circle cx="560" cy="40" fill="#e8f4fb" r="22" stroke="#3399cc" stroke-width="1.5"/>
+<circle cx="40" cy="40" fill="#e8f4fb" r="44.8" stroke="#3399cc" stroke-width="1.5"/>
+<circle cx="560" cy="40" fill="#e8f4fb" r="44.8" stroke="#3399cc" stroke-width="1.5"/>
 </g>
 <g id="labels">
-<text fill="#333" text-anchor="middle" x="40" y="44">
+<text fill="#333" text-anchor="middle" x="40" y="45.6">
 alice:Person
 </text>
-<text fill="#333" text-anchor="middle" x="560" y="44">
+<text fill="#333" text-anchor="middle" x="560" y="45.6">
 bob:Person
 </text>
 </g>

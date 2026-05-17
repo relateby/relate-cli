@@ -1,52 +1,52 @@
-<svg font-family="monospace" font-size="10" viewBox="-207.00 -207.00 1014.00 820.68" xmlns="http://www.w3.org/2000/svg">
+<svg font-family="monospace" font-size="16" viewBox="-340.80 -340.80 1281.60 1088.28" xmlns="http://www.w3.org/2000/svg">
 <g id="path-envelopes"/>
 <g id="edges">
-<path d="M 278.56,361.56 A 530.12,530.12 0 0 1 59.84,229.18 L 55.60,229.11 L 54.95,222.77 L 61.33,223.53 L 61.26,227.77 A 528.12,528.12 0 0 0 279.15,359.65 Z" fill="#aaa" stroke="none"/>
-<text fill="#888" text-anchor="middle" transform="rotate(31.6,158.20,305.81)" x="158.20491812281864" y="305.8122538627563">
+<path d="M 255.69,359.62 A 364.59,364.59 0 0 1 72.19,249.76 L 67.28,249.38 L 67.02,242.36 L 74.05,243.51 L 73.68,248.42 A 362.59,362.59 0 0 0 256.16,357.68 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(31.6,152.39,315.26)" x="152.38601106176154" y="315.264783715382">
 BRIDGE
 </text>
-<path d="M 285.77,349.84 A 530.12,530.12 0 0 0 69.08,214.18 L 67.10,210.43 L 61.14,212.70 L 64.70,218.06 L 68.46,216.08 A 528.12,528.12 0 0 1 284.33,351.23 Z" fill="#aaa" stroke="none"/>
-<text fill="#888" text-anchor="middle" transform="rotate(31.6,181.80,267.49)" x="181.7950818838611" y="267.49118689265237">
+<path d="M 273.74,330.29 A 364.59,364.59 0 0 0 93.01,215.94 L 90.46,211.73 L 84.07,214.65 L 88.27,220.41 L 92.48,217.87 A 362.59,362.59 0 0 1 272.22,331.59 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(31.6,187.61,258.04)" x="187.6139889449182" y="258.03865704002664">
 BRIDGE
 </text>
-<path d="M 57.98,193.91 L 274.20,55.35 L 272.58,52.82 L 281.48,51.87 L 276.90,59.55 L 275.28,57.03 L 59.06,195.60 Z" fill="#aaa" stroke="none"/>
+<path d="M 77.18,181.61 L 254.20,68.17 L 252.32,65.24 L 262.28,64.17 L 257.15,72.78 L 255.28,69.85 L 78.26,183.29 Z" fill="#aaa" stroke="none"/>
 <text fill="#888" text-anchor="middle" transform="rotate(-32.7,170.00,123.31)" x="169.99999999652277" y="123.31234371491394">
 BRIDGE
 </text>
-<path d="M 299.00,344.68 L 299.00,70.00 L 296.00,70.00 L 300.00,62.00 L 304.00,70.00 L 301.00,70.00 L 301.00,344.68 Z" fill="#aaa" stroke="none"/>
+<path d="M 299.00,321.88 L 299.00,93.76 L 295.52,93.76 L 300.00,84.80 L 304.48,93.76 L 301.00,93.76 L 301.00,321.88 Z" fill="#aaa" stroke="none"/>
 <text fill="#888" text-anchor="middle" transform="rotate(90.0,300.00,203.34)" x="299.99999999986267" y="203.33937666279041">
 BRIDGE
 </text>
-<path d="M 314.23,349.84 A 530.12,530.12 0 0 1 530.92,214.18 L 532.90,210.43 L 538.86,212.70 L 535.30,218.06 L 531.54,216.08 A 528.12,528.12 0 0 0 315.67,351.23 Z" fill="#aaa" stroke="none"/>
-<text fill="#888" text-anchor="middle" transform="rotate(-31.6,418.20,267.49)" x="418.20491812121935" y="267.49118688278554">
+<path d="M 326.26,330.29 A 364.59,364.59 0 0 1 506.99,215.94 L 509.54,211.73 L 515.93,214.65 L 511.73,220.41 L 507.52,217.87 A 362.59,362.59 0 0 0 327.78,331.59 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(-31.6,412.39,258.04)" x="412.3860110593732" y="258.0386570306456">
 BRIDGE
 </text>
-<path d="M 321.44,361.56 A 530.12,530.12 0 0 0 540.16,229.18 L 544.40,229.11 L 545.05,222.77 L 538.67,223.53 L 538.74,227.77 A 528.12,528.12 0 0 1 320.85,359.65 Z" fill="#aaa" stroke="none"/>
-<text fill="#888" text-anchor="middle" transform="rotate(-31.6,441.80,305.81)" x="441.7950818854605" y="305.81225385092046">
+<path d="M 344.31,359.62 A 364.59,364.59 0 0 0 527.81,249.76 L 532.72,249.38 L 532.98,242.36 L 525.95,243.51 L 526.32,248.42 A 362.59,362.59 0 0 1 343.84,357.68 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(-31.6,447.61,315.26)" x="447.61398894730655" y="315.2647837030604">
 BRIDGE
 </text>
-<path d="M 540.94,195.60 L 324.72,57.03 L 323.10,59.55 L 318.52,51.87 L 327.42,52.82 L 325.80,55.35 L 542.02,193.91 Z" fill="#aaa" stroke="none"/>
-<text fill="#888" text-anchor="middle" transform="rotate(32.7,430.00,123.31)" x="429.9999999965228" y="123.31234370406261">
+<path d="M 521.74,183.29 L 344.72,69.85 L 342.85,72.78 L 337.72,64.17 L 347.68,65.24 L 345.80,68.17 L 522.82,181.61 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(32.7,430.00,123.31)" x="429.9999999965228" y="123.3123437040626">
 BRIDGE
 </text>
 </g>
 <g id="nodes">
-<circle cx="40" cy="206.62468742982787" fill="#e8f4fb" r="22" stroke="#3399cc" stroke-width="1.5"/>
-<circle cx="300.0000000066798" cy="366.67875332558083" fill="#e8f4fb" r="22" stroke="#3399cc" stroke-width="1.5"/>
-<circle cx="560" cy="206.6246874081252" fill="#e8f4fb" r="22" stroke="#3399cc" stroke-width="1.5"/>
-<circle cx="299.99999999304555" cy="40" fill="#e8f4fb" r="22" stroke="#3399cc" stroke-width="1.5"/>
+<circle cx="40" cy="206.62468742982787" fill="#e8f4fb" r="44.8" stroke="#3399cc" stroke-width="1.5"/>
+<circle cx="300.0000000066798" cy="366.67875332558083" fill="#e8f4fb" r="44.8" stroke="#3399cc" stroke-width="1.5"/>
+<circle cx="560" cy="206.6246874081252" fill="#e8f4fb" r="44.8" stroke="#3399cc" stroke-width="1.5"/>
+<circle cx="299.99999999304555" cy="40" fill="#e8f4fb" r="44.8" stroke="#3399cc" stroke-width="1.5"/>
 </g>
 <g id="labels">
-<text fill="#333" text-anchor="middle" x="40" y="210.62468742982787">
+<text fill="#333" text-anchor="middle" x="40" y="212.22468742982787">
 altstadt:Land
 </text>
-<text fill="#333" text-anchor="middle" x="300.0000000066798" y="370.67875332558083">
+<text fill="#333" text-anchor="middle" x="300.0000000066798" y="372.27875332558085">
 kneiphof:Island
 </text>
-<text fill="#333" text-anchor="middle" x="560" y="210.6246874081252">
+<text fill="#333" text-anchor="middle" x="560" y="212.2246874081252">
 lobenicht:Land
 </text>
-<text fill="#333" text-anchor="middle" x="299.99999999304555" y="44">
+<text fill="#333" text-anchor="middle" x="299.99999999304555" y="45.6">
 lomse:Island
 </text>
 </g>
