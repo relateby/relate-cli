@@ -2,10 +2,9 @@ use crate::cli::McpArgs;
 use crate::gram_render::{parse_gram, render_html, render_svg};
 use anyhow::Result;
 use rmcp::{
-    ServerHandler, ServiceExt,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{CallToolResult, Content},
-    tool, tool_handler, tool_router,
+    tool, tool_handler, tool_router, ServerHandler, ServiceExt,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

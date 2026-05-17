@@ -26,8 +26,7 @@ pub fn render_html(graph: &GramGraph) -> String {
         layout: &layout,
     };
 
-    let data_json =
-        serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
+    let data_json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
 
     format!(
         r#"<!DOCTYPE html>

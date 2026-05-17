@@ -43,7 +43,12 @@ pub fn compute(graph: &GramGraph) -> LayoutResult {
     if n == 0 {
         return LayoutResult {
             positions: HashMap::new(),
-            bounds: Bounds { x: 0.0, y: 0.0, w: CANVAS, h: CANVAS },
+            bounds: Bounds {
+                x: 0.0,
+                y: 0.0,
+                w: CANVAS,
+                h: CANVAS,
+            },
         };
     }
 
@@ -157,7 +162,12 @@ pub fn compute(graph: &GramGraph) -> LayoutResult {
         })
         .collect();
 
-    let bounds = Bounds { x: 0.0, y: 0.0, w: CANVAS, h: CANVAS };
+    let bounds = Bounds {
+        x: 0.0,
+        y: 0.0,
+        w: CANVAS,
+        h: CANVAS,
+    };
 
     LayoutResult { positions, bounds }
 }

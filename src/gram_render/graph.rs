@@ -287,8 +287,10 @@ fn convert_value(v: &pattern_core::Value) -> serde_json::Value {
         Value::VBoolean(b) => json!(b),
         Value::VArray(arr) => serde_json::Value::Array(arr.iter().map(convert_value).collect()),
         Value::VMap(map) => {
-            let obj: serde_json::Map<String, serde_json::Value> =
-                map.iter().map(|(k, v)| (k.clone(), convert_value(v))).collect();
+            let obj: serde_json::Map<String, serde_json::Value> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), convert_value(v)))
+                .collect();
             serde_json::Value::Object(obj)
         }
         Value::VRange(r) => {

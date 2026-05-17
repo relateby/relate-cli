@@ -14,20 +14,20 @@ use super::layout::{self, Vec2};
 
 // ── Typography base ──────────────────────────────────────────────────────────────
 // Matches browser default REM so HTML and SVG renderers produce the same sizes.
-const FONT_SIZE: f64          = 16.0;
-const LINE_HEIGHT_RATIO: f64  = 1.4;
-const HEM: f64                = FONT_SIZE * LINE_HEIGHT_RATIO; // 22.4px — 1 line-height
+const FONT_SIZE: f64 = 16.0;
+const LINE_HEIGHT_RATIO: f64 = 1.4;
+const HEM: f64 = FONT_SIZE * LINE_HEIGHT_RATIO; // 22.4px — 1 line-height
 
 // ── All sizing derived from HEM ───────────────────────────────────────────────────
-const NODE_RADIUS: f64        = 2.0 * HEM;   // 44.8px — encloses 7-hex cluster
-const DEFLECTION_STEP: f64    = 30.0;        // degrees per parallel-edge step
-const MAX_DEFLECTION: f64     = 150.0;       // degrees total spread cap
-const SAGITTA_PER_DEG: f64    = 0.1 * HEM;  // 2.24px per degree of deflection
-const SHAFT_R: f64            = 1.0;         // half shaft width — absolute minimum
-const HEAD_R: f64             = 0.2 * HEM;  // 4.48px half arrowhead width
-const HEAD_HEIGHT: f64        = 0.4 * HEM;  // 8.96px arrowhead length
-const TUBE_RADIUS: f64        = 2.5 * HEM;  // 56.0px — 0.5 HEM overhang per side
-const PADDING: f64            = 2.0 * HEM;  // 44.8px viewBox margin
+const NODE_RADIUS: f64 = 2.0 * HEM; // 44.8px — encloses 7-hex cluster
+const DEFLECTION_STEP: f64 = 30.0; // degrees per parallel-edge step
+const MAX_DEFLECTION: f64 = 150.0; // degrees total spread cap
+const SAGITTA_PER_DEG: f64 = 0.1 * HEM; // 2.24px per degree of deflection
+const SHAFT_R: f64 = 1.0; // half shaft width — absolute minimum
+const HEAD_R: f64 = 0.2 * HEM; // 4.48px half arrowhead width
+const HEAD_HEIGHT: f64 = 0.4 * HEM; // 8.96px arrowhead length
+const TUBE_RADIUS: f64 = 2.5 * HEM; // 56.0px — 0.5 HEM overhang per side
+const PADDING: f64 = 2.0 * HEM; // 44.8px viewBox margin
 
 // Per-path HSL hues (distinct, semi-transparent fills)
 const PATH_HUES: [u16; 6] = [200, 120, 40, 300, 0, 160];
@@ -47,9 +47,9 @@ pub fn render_svg(graph: &GramGraph) -> String {
 
     // ── Layer groups ────────────────────────────────────────────────────────────
     let mut envelopes = Group::new().set("id", "path-envelopes");
-    let mut edges_g   = Group::new().set("id", "edges");
-    let mut nodes_g   = Group::new().set("id", "nodes");
-    let mut labels_g  = Group::new().set("id", "labels");
+    let mut edges_g = Group::new().set("id", "edges");
+    let mut nodes_g = Group::new().set("id", "nodes");
+    let mut labels_g = Group::new().set("id", "labels");
 
     // ── Path envelopes ──────────────────────────────────────────────────────────
     for (idx, path) in graph.paths.iter().enumerate() {
@@ -63,8 +63,14 @@ pub fn render_svg(graph: &GramGraph) -> String {
 
     // ── Edges ───────────────────────────────────────────────────────────────────
     for (i, edge) in graph.edges.iter().enumerate() {
-        let sp = match positions.get(&edge.source) { Some(p) => *p, None => continue };
-        let tp = match positions.get(&edge.target) { Some(p) => *p, None => continue };
+        let sp = match positions.get(&edge.source) {
+            Some(p) => *p,
+            None => continue,
+        };
+        let tp = match positions.get(&edge.target) {
+            Some(p) => *p,
+            None => continue,
+        };
         let (count, pos_in_group) = edge_info[i];
         let deflection = compute_deflection(count, pos_in_group);
         for elem in build_edge(edge, sp, tp, deflection) {
@@ -74,7 +80,10 @@ pub fn render_svg(graph: &GramGraph) -> String {
 
     // ── Nodes ───────────────────────────────────────────────────────────────────
     for node in &graph.nodes {
-        let pos = match positions.get(&node.id) { Some(p) => *p, None => continue };
+        let pos = match positions.get(&node.id) {
+            Some(p) => *p,
+            None => continue,
+        };
         let (circle, label) = build_node(node, pos);
         nodes_g = nodes_g.add(circle);
         labels_g = labels_g.add(label);
@@ -144,19 +153,27 @@ fn compute_deflection(count: usize, position: usize) -> f64 {
 // ── Arc geometry ─────────────────────────────────────────────────────────────────
 
 struct ArcParams {
-    arc_cx: f64, arc_cy: f64,
+    arc_cx: f64,
+    arc_cy: f64,
     r: f64,
-    t1_angle: f64, t2_angle: f64,
+    t1_angle: f64,
+    t2_angle: f64,
     sweep: f64,
-    sweep_flag: u8, large_arc: u8,
-    t2x: f64, t2y: f64,
-    tx: f64, ty: f64, // tangent at T2 (for arrowhead orientation)
-    px: f64, py: f64, // outward radius at T2
+    sweep_flag: u8,
+    large_arc: u8,
+    t2x: f64,
+    t2y: f64,
+    tx: f64,
+    ty: f64, // tangent at T2 (for arrowhead orientation)
+    px: f64,
+    py: f64, // outward radius at T2
 }
 
 fn compute_arc_params(
-    sp: Vec2, tp: Vec2,
-    natural_angle: f64, centre_distance: f64,
+    sp: Vec2,
+    tp: Vec2,
+    natural_angle: f64,
+    centre_distance: f64,
     deflection_deg: f64,
 ) -> Option<ArcParams> {
     let sagitta = deflection_deg * SAGITTA_PER_DEG;
@@ -186,10 +203,18 @@ fn compute_arc_params(
 
     // Determine sweep direction
     let mut raw_sweep = alpha_t - alpha_s;
-    while raw_sweep > PI  { raw_sweep -= 2.0 * PI; }
-    while raw_sweep < -PI { raw_sweep += 2.0 * PI; }
-    if sign > 0.0 && raw_sweep > 0.0 { raw_sweep -= 2.0 * PI; }
-    if sign < 0.0 && raw_sweep < 0.0 { raw_sweep += 2.0 * PI; }
+    while raw_sweep > PI {
+        raw_sweep -= 2.0 * PI;
+    }
+    while raw_sweep < -PI {
+        raw_sweep += 2.0 * PI;
+    }
+    if sign > 0.0 && raw_sweep > 0.0 {
+        raw_sweep -= 2.0 * PI;
+    }
+    if sign < 0.0 && raw_sweep < 0.0 {
+        raw_sweep += 2.0 * PI;
+    }
     let sweep_dir = if raw_sweep > 0.0 { 1.0_f64 } else { -1.0_f64 };
 
     let t1_angle = alpha_s + sweep_dir * delta;
@@ -198,23 +223,39 @@ fn compute_arc_params(
     let t2y = arc_cy + r * t2_angle.sin();
 
     let mut sweep = t2_angle - t1_angle;
-    if sweep_dir > 0.0 { while sweep < 0.0 { sweep += 2.0 * PI; } }
-    else               { while sweep > 0.0 { sweep -= 2.0 * PI; } }
+    if sweep_dir > 0.0 {
+        while sweep < 0.0 {
+            sweep += 2.0 * PI;
+        }
+    } else {
+        while sweep > 0.0 {
+            sweep -= 2.0 * PI;
+        }
+    }
 
     let sweep_flag = if sweep_dir > 0.0 { 1u8 } else { 0u8 };
-    let large_arc  = if sweep.abs() > PI { 1u8 } else { 0u8 };
+    let large_arc = if sweep.abs() > PI { 1u8 } else { 0u8 };
 
     let cos_e = t2_angle.cos();
     let sin_e = t2_angle.sin();
-    let tx = if sweep_flag == 1 {  sin_e } else { -sin_e };
-    let ty = if sweep_flag == 1 { -cos_e } else {  cos_e };
+    let tx = if sweep_flag == 1 { sin_e } else { -sin_e };
+    let ty = if sweep_flag == 1 { -cos_e } else { cos_e };
 
     Some(ArcParams {
-        arc_cx, arc_cy, r,
-        t1_angle, t2_angle, sweep,
-        sweep_flag, large_arc,
-        t2x, t2y,
-        tx, ty, px: cos_e, py: sin_e,
+        arc_cx,
+        arc_cy,
+        r,
+        t1_angle,
+        t2_angle,
+        sweep,
+        sweep_flag,
+        large_arc,
+        t2x,
+        t2y,
+        tx,
+        ty,
+        px: cos_e,
+        py: sin_e,
     })
 }
 
@@ -228,18 +269,21 @@ fn build_edge(edge: &GramEdge, sp: Vec2, tp: Vec2, deflection_deg: f64) -> Vec<B
 
     match compute_arc_params(sp, tp, natural_angle, centre_distance, deflection_deg) {
         Some(arc) => build_arc_edge(edge, &arc, natural_angle),
-        None      => build_straight_edge(edge, sp, tp, natural_angle),
+        None => build_straight_edge(edge, sp, tp, natural_angle),
     }
 }
 
 fn build_straight_edge(
-    edge: &GramEdge, sp: Vec2, tp: Vec2, natural_angle: f64,
+    edge: &GramEdge,
+    sp: Vec2,
+    tp: Vec2,
+    natural_angle: f64,
 ) -> Vec<Box<dyn Node>> {
     let mut elems: Vec<Box<dyn Node>> = Vec::new();
     let cos_a = natural_angle.cos();
     let sin_a = natural_angle.sin();
     let perp_x = -sin_a;
-    let perp_y =  cos_a;
+    let perp_y = cos_a;
 
     // Attachment points on node surfaces
     let x1 = sp.x + cos_a * NODE_RADIUS;
@@ -264,21 +308,32 @@ fn build_straight_edge(
     } else {
         format!(
             "M {:.2},{:.2} L {:.2},{:.2} L {:.2},{:.2} L {:.2},{:.2} Z",
-            x1 - perp_x * SHAFT_R, y1 - perp_y * SHAFT_R,
-            x2 - perp_x * SHAFT_R, y2 - perp_y * SHAFT_R,
-            x2 + perp_x * SHAFT_R, y2 + perp_y * SHAFT_R,
-            x1 + perp_x * SHAFT_R, y1 + perp_y * SHAFT_R,
+            x1 - perp_x * SHAFT_R,
+            y1 - perp_y * SHAFT_R,
+            x2 - perp_x * SHAFT_R,
+            y2 - perp_y * SHAFT_R,
+            x2 + perp_x * SHAFT_R,
+            y2 + perp_y * SHAFT_R,
+            x1 + perp_x * SHAFT_R,
+            y1 + perp_y * SHAFT_R,
         )
     };
     elems.push(Box::new(
-        SvgPath::new().set("d", path_d).set("fill", "#aaa").set("stroke", "none"),
+        SvgPath::new()
+            .set("d", path_d)
+            .set("fill", "#aaa")
+            .set("stroke", "none"),
     ));
 
     if let Some(ref lbl) = edge.label {
         let mx = (x1 + x2) / 2.0;
         let my = (y1 + y2) / 2.0;
         let deg = natural_angle.to_degrees();
-        let deg = if deg > 90.0 || deg < -90.0 { deg + 180.0 } else { deg };
+        let deg = if deg > 90.0 || deg < -90.0 {
+            deg + 180.0
+        } else {
+            deg
+        };
         elems.push(Box::new(
             Text::new(lbl.clone())
                 .set("x", mx)
@@ -313,38 +368,51 @@ fn build_arc_edge(edge: &GramEdge, arc: &ArcParams, natural_angle: f64) -> Vec<B
     let iex = arc.arc_cx + r_inner * shaft_end_angle.cos();
     let iey = arc.arc_cy + r_inner * shaft_end_angle.sin();
 
-    let sf  = arc.sweep_flag;
+    let sf = arc.sweep_flag;
     let isf = 1u8 - sf;
-    let la  = arc.large_arc;
-    let px = arc.px; let py = arc.py;
-    let tx = arc.tx; let ty = arc.ty;
-    let hr  = HEAD_R - SHAFT_R; // extra spread for arrowhead flanks
+    let la = arc.large_arc;
+    let px = arc.px;
+    let py = arc.py;
+    let tx = arc.tx;
+    let ty = arc.ty;
+    let hr = HEAD_R - SHAFT_R; // extra spread for arrowhead flanks
 
     let path_d = if edge.directed {
         format!(
             "M {:.2},{:.2} A {:.2},{:.2} 0 {la} {sf} {:.2},{:.2} \
              L {:.2},{:.2} L {:.2},{:.2} L {:.2},{:.2} \
              L {:.2},{:.2} A {:.2},{:.2} 0 {la} {isf} {:.2},{:.2} Z",
-            osx, osy,
-            r_outer, r_outer, oex, oey,
-            oex + (px - tx) * hr, oey + (py - ty) * hr,
-            arc.t2x, arc.t2y,
-            iex - (px + tx) * hr, iey - (py + ty) * hr,
-            iex, iey,
-            r_inner, r_inner, isx, isy,
+            osx,
+            osy,
+            r_outer,
+            r_outer,
+            oex,
+            oey,
+            oex + (px - tx) * hr,
+            oey + (py - ty) * hr,
+            arc.t2x,
+            arc.t2y,
+            iex - (px + tx) * hr,
+            iey - (py + ty) * hr,
+            iex,
+            iey,
+            r_inner,
+            r_inner,
+            isx,
+            isy,
         )
     } else {
         format!(
             "M {:.2},{:.2} A {:.2},{:.2} 0 {la} {sf} {:.2},{:.2} \
              L {:.2},{:.2} A {:.2},{:.2} 0 {la} {isf} {:.2},{:.2} Z",
-            osx, osy,
-            r_outer, r_outer, oex, oey,
-            iex, iey,
-            r_inner, r_inner, isx, isy,
+            osx, osy, r_outer, r_outer, oex, oey, iex, iey, r_inner, r_inner, isx, isy,
         )
     };
     elems.push(Box::new(
-        SvgPath::new().set("d", path_d).set("fill", "#aaa").set("stroke", "none"),
+        SvgPath::new()
+            .set("d", path_d)
+            .set("fill", "#aaa")
+            .set("stroke", "none"),
     ));
 
     if let Some(ref lbl) = edge.label {
@@ -352,14 +420,21 @@ fn build_arc_edge(edge: &GramEdge, arc: &ArcParams, natural_angle: f64) -> Vec<B
         let mid_x = arc.arc_cx + r * mid_angle.cos();
         let mid_y = arc.arc_cy + r * mid_angle.sin();
         let deg = natural_angle.to_degrees();
-        let deg = if deg > 90.0 || deg < -90.0 { deg + 180.0 } else { deg };
+        let deg = if deg > 90.0 || deg < -90.0 {
+            deg + 180.0
+        } else {
+            deg
+        };
         elems.push(Box::new(
             Text::new(lbl.clone())
                 .set("x", mid_x)
                 .set("y", mid_y)
                 .set("text-anchor", "middle")
                 .set("fill", "#888")
-                .set("transform", format!("rotate({deg:.1},{mid_x:.2},{mid_y:.2})")),
+                .set(
+                    "transform",
+                    format!("rotate({deg:.1},{mid_x:.2},{mid_y:.2})"),
+                ),
         ));
     }
     elems
@@ -368,7 +443,7 @@ fn build_arc_edge(edge: &GramEdge, arc: &ArcParams, natural_angle: f64) -> Vec<B
 // ── Node builder ─────────────────────────────────────────────────────────────────
 
 fn build_node(node: &GramNode, pos: Vec2) -> (Circle, Text) {
-    let fill   = if node.is_nested { "#e8e8f8" } else { "#e8f4fb" };
+    let fill = if node.is_nested { "#e8e8f8" } else { "#e8f4fb" };
     let stroke = if node.is_nested { "#9999cc" } else { "#3399cc" };
 
     let circle = Circle::new()
@@ -395,18 +470,14 @@ fn build_node(node: &GramNode, pos: Vec2) -> (Circle, Text) {
 
 // ── Path tube builder ─────────────────────────────────────────────────────────────
 
-fn build_envelope(
-    path: &GramPath,
-    positions: &HashMap<String, Vec2>,
-    idx: usize,
-) -> Option<Group> {
+fn build_envelope(path: &GramPath, positions: &HashMap<String, Vec2>, idx: usize) -> Option<Group> {
     // Collect node centres in path-sequence order (edges ignored)
     let pts: Vec<Vec2> = path
         .members
         .iter()
         .filter_map(|m| match m {
             PathMember::Node(id) => positions.get(id).copied(),
-            PathMember::Edge(_)  => None,
+            PathMember::Edge(_) => None,
         })
         .collect();
 
@@ -428,8 +499,8 @@ fn build_envelope(
         .collect::<Vec<_>>()
         .join(" ");
 
-    let hue    = PATH_HUES[idx % PATH_HUES.len()];
-    let fill   = format!("hsla({hue},65%,60%,0.20)");
+    let hue = PATH_HUES[idx % PATH_HUES.len()];
+    let fill = format!("hsla({hue},65%,60%,0.20)");
     let border = format!("hsla({hue},65%,45%,0.40)");
     let tube_w = TUBE_RADIUS * 2.0;
 
@@ -470,7 +541,6 @@ fn build_envelope(
     Some(group)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,8 +551,8 @@ mod tests {
         let gram_path = format!("{FIXTURE_DIR}/{name}.gram");
         let source = std::fs::read_to_string(&gram_path)
             .unwrap_or_else(|_| panic!("cannot read {gram_path}"));
-        let graph = parse_gram(&source)
-            .unwrap_or_else(|e| panic!("parse failed for {gram_path}: {e}"));
+        let graph =
+            parse_gram(&source).unwrap_or_else(|e| panic!("parse failed for {gram_path}: {e}"));
         render_svg(&graph)
     }
 
