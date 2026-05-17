@@ -160,7 +160,14 @@ impl GraphBuilder {
             return;
         }
 
-        // Non-atomic: relationship or named group
+        // Non-atomic: relationship or named group.
+        // Relationships always have exactly 2 elements (source, target); gram-codec
+        // left-associates chained paths so nested relationships arrive here too.
+        // Known limitation: a 2-element named group like `[g | (a) (b)]` is
+        // structurally indistinguishable from a bare unlabeled relationship in the
+        // Pattern API because Subject carries no arrow-type after parsing. In
+        // idiomatic gram, groups always wrap relationship chains (yielding 1 element),
+        // so the ambiguity does not arise in practice.
         if elements.len() == 2 {
             self.walk_relationship(pattern, path_ctx);
             return;
@@ -221,7 +228,12 @@ impl GraphBuilder {
             target: target_id.clone(),
             label,
             properties: convert_properties(&edge_subject.properties),
-            directed: true, // gram-codec normalizes direction but doesn't preserve it
+            // Known limitation (FR-007): gram-codec normalizes left-arrows by
+            // reversing element order but discards the arrow type from Subject,
+            // so undirected (`(a)--(b)`) and bidirectional (`(a)<-->(b)`) edges
+            // are indistinguishable from directed ones at this layer. All edges
+            // are rendered with arrowheads until the codec exposes arrow-type.
+            directed: true,
         });
 
         if let Some(pid) = path_ctx {

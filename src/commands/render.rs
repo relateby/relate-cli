@@ -6,10 +6,34 @@ use crate::cli::{OutputFormat, RenderArgs};
 use crate::gram_render;
 
 pub fn run(args: RenderArgs) -> Result<()> {
-    let source = std::fs::read_to_string(&args.file)
-        .map_err(|e| anyhow::anyhow!("cannot read {:?}: {e}", args.file))?;
+    // I/O error reading the source file → contract exit code 2.
+    // In --json mode emit {"error":"..."} to stdout and exit directly so the
+    // caller always receives structured output; otherwise propagate via `?`.
+    let source = match std::fs::read_to_string(&args.file) {
+        Ok(s) => s,
+        Err(e) => {
+            let msg = format!("cannot read {:?}: {e}", args.file);
+            if args.json {
+                println!("{}", serde_json::json!({ "error": msg }));
+                std::process::exit(2);
+            }
+            return Err(anyhow::anyhow!("{msg}"));
+        }
+    };
 
-    let graph = gram_render::parse_gram(&source).map_err(|e| anyhow::anyhow!("{e}"))?;
+    // Parse / logic error → contract exit code 1.
+    // Propagate as anyhow::Error::from so the original RenderError variant
+    // survives and main.rs can downcast it to select the right exit code.
+    let graph = match gram_render::parse_gram(&source) {
+        Ok(g) => g,
+        Err(e) => {
+            if args.json {
+                println!("{}", serde_json::json!({ "error": e.to_string() }));
+                std::process::exit(1);
+            }
+            return Err(anyhow::Error::from(e));
+        }
+    };
 
     let output_path = resolve_output(&args)?;
 

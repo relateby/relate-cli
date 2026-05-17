@@ -42,7 +42,14 @@ async fn main() -> Result<()> {
         Commands::Render(args) => {
             if let Err(e) = commands::render::run(args) {
                 eprintln!("error: {e:#}");
-                std::process::exit(1);
+                // render::run handles --json error output and exits internally;
+                // reaching here means non-JSON mode. Use contract exit codes:
+                // 1 = parse/logic error (RenderError), 2 = I/O error.
+                if e.downcast_ref::<gram_render::RenderError>().is_some() {
+                    std::process::exit(1);
+                } else {
+                    std::process::exit(2);
+                }
             }
             Ok(())
         }
