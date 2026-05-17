@@ -1,0 +1,37 @@
+<svg font-family="monospace" font-size="16" viewBox="-340.80 -340.80 1270.75 1281.60" xmlns="http://www.w3.org/2000/svg">
+<g id="path-envelopes">
+<g>
+<path d="M 40.00,266.04 L 509.94,40.00 L 549.15,560.00" fill="none" stroke="hsla(200,65%,45%,0.40)" stroke-linecap="round" stroke-linejoin="round" stroke-width="115"/>
+<path d="M 40.00,266.04 L 509.94,40.00 L 549.15,560.00" fill="none" stroke="hsla(200,65%,60%,0.20)" stroke-linecap="round" stroke-linejoin="round" stroke-width="112"/>
+<text fill="#555" text-anchor="middle" x="40" y="204.04243675451232">
+route1
+</text>
+</g>
+</g>
+<g id="edges">
+<path d="M 79.94,245.72 L 461.06,62.40 L 459.55,59.27 L 469.57,59.42 L 463.43,67.34 L 461.93,64.20 L 80.81,247.52 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(-25.7,274.97,153.02)" x="274.96930912435613" y="153.02121837725616">
+TO
+</text>
+<path d="M 514.30,84.60 L 546.10,506.32 L 549.57,506.06 L 545.78,515.33 L 540.64,506.73 L 544.11,506.47 L 512.31,84.75 Z" fill="#aaa" stroke="none"/>
+<text fill="#888" text-anchor="middle" transform="rotate(85.7,529.54,300.00)" x="529.5440265295126" y="300">
+TO
+</text>
+</g>
+<g id="nodes">
+<circle cx="40" cy="266.0424367545123" fill="#e8f4fb" r="44.8" stroke="#3399cc" stroke-width="1.5"/>
+<circle cx="509.93861824871226" cy="40" fill="#e8f4fb" r="44.8" stroke="#3399cc" stroke-width="1.5"/>
+<circle cx="549.1494348103131" cy="560" fill="#e8f4fb" r="44.8" stroke="#3399cc" stroke-width="1.5"/>
+</g>
+<g id="labels">
+<text fill="#333" text-anchor="middle" x="40" y="271.64243675451235">
+a:Point
+</text>
+<text fill="#333" text-anchor="middle" x="509.93861824871226" y="45.6">
+b:Point
+</text>
+<text fill="#333" text-anchor="middle" x="549.1494348103131" y="565.6">
+c:Point
+</text>
+</g>
+</svg>

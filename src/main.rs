@@ -3,6 +3,7 @@ use clap::Parser;
 
 mod cli;
 mod commands;
+mod gram_render;
 
 use cli::{Cli, Commands};
 
@@ -38,6 +39,20 @@ async fn main() -> Result<()> {
         Commands::Write(args) => commands::write::run(args, cli.neo4j).await,
         Commands::Read(args) => commands::read::run(args, cli.neo4j).await,
         Commands::Mcp(args) => commands::mcp::run(args).await,
+        Commands::Render(args) => {
+            if let Err(e) = commands::render::run(args) {
+                eprintln!("error: {e:#}");
+                // render::run handles --json error output and exits internally;
+                // reaching here means non-JSON mode. Use contract exit codes:
+                // 1 = parse/logic error (RenderError), 2 = I/O error.
+                if e.downcast_ref::<gram_render::RenderError>().is_some() {
+                    std::process::exit(1);
+                } else {
+                    std::process::exit(2);
+                }
+            }
+            Ok(())
+        }
         Commands::External(args) => {
             let (name, ext_args) = args
                 .split_first()

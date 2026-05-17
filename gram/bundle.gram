@@ -1,0 +1,6 @@
+// multiple paths between two points create a bundle
+(a:Pole)-[:RADIATES]->(b:Pole)
+(a:Pole)-[:RADIATES]->(b:Pole)
+(a:Pole)-[:RADIATES]->(b:Pole)
+(a:Pole)-[:RADIATES]->(b:Pole)
+(a:Pole)-[:RADIATES]->(b:Pole)

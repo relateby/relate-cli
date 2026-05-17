@@ -1,0 +1,14 @@
+// areas
+(kneiphof:Island { name: "Kneiphof", position: "central" })
+(altstadt:Land { name: "Altstadt", position: "north" })
+(lomse:Island { name: "Lomse", position: "east" })
+(lobenicht:Land {name: "Löbenicht", position: "south" })
+
+// bridges
+(kneiphof)-[kramerbrucke:BRIDGE { name: "Krämerbrücke", english: "Trader's Bridge", cost: 1.00usd }]->(altstadt)
+(kneiphof)-[schmiedebrucke:BRIDGE { name: "Schmeidebrücke", english: "Forged Bridge", cost: 1.50usd }]->(altstadt)
+(altstadt)-[holzbrucke:BRIDGE { name: "Holzbrücke", english: "Wood Bridge", cost: 1.50usd }]->(lomse)
+(kneiphof)-[dombrucke:BRIDGE { name: "Dom Brücke", english: "Cathedral Bridge", cost: 3.00usd }]->(lomse)
+(kneiphof)-[grunebrucke:BRIDGE { name: "Grüne Brücke", english: "Green Bridge", cost: 2.00usd }]->(lobenicht)
+(kneiphof)-[kottelbrucke:BRIDGE { name: "Köttelbrücke", english: "Dung Bridge", cost: 0.50usd }]->(lobenicht)
+(lobenicht)-[hohebrucke:BRIDGE { name: "Höhe Brücke", english: "High Bridge", cost: 1.50 }]->(lomse)
